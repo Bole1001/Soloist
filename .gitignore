@@ -1,0 +1,17 @@
+# Xcode 核心忽略 (必须有)
+build/
+DerivedData/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.xcuserstate
+
+# macOS 垃圾文件
+.DS_Store
+
+# 如果你以后用了 Swift Package Manager
+.build/

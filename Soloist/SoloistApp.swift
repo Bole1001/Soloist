@@ -11,7 +11,7 @@ import SwiftUI
 struct SoloistApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            MacHomeView()
         }
     }
 }
