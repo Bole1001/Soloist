@@ -41,11 +41,21 @@ struct MacHomeView: View {
                 // 3. 渲染歌曲列表
                 List(libraryService.songs) { song in
                     HStack {
-                        // 暂时用系统图标代替封面
-                        Image(systemName: "music.note")
-                            .frame(width: 32, height: 32)
-                            .background(Color.gray.opacity(0.2))
-                            .cornerRadius(4)
+                        if let data = song.artworkData, let nsImage = NSImage(data: data) {
+                                // 1. 如果有封面数据，显示封面
+                                Image(nsImage: nsImage)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: 40, height: 40)
+                                    .cornerRadius(4)
+                                    .clipped() // 防止图片比例不对导致溢出
+                            } else {
+                                // 2. 如果没封面，还是显示默认图标
+                                Image(systemName: "music.note")
+                                    .frame(width: 40, height: 40)
+                                    .background(Color.gray.opacity(0.2))
+                                    .cornerRadius(4)
+                            }
                         
                         VStack(alignment: .leading) {
                             Text(song.title)

@@ -81,19 +81,29 @@ class LocalLibraryService: ObservableObject {
             options: [.skipsHiddenFiles, .skipsPackageDescendants]
         )
         
-        var foundSongs: [Song] = []
-        
-        while let fileURL = enumerator?.nextObject() as? URL {
-            if fileURL.pathExtension.lowercased() == "mp3" {
-                let filename = fileURL.deletingPathExtension().lastPathComponent
-                let newSong = Song(url: fileURL, title: filename, artist: "Unknown")
-                foundSongs.append(newSong)
-            }
-        }
-        
-        DispatchQueue.main.async {
-            self.songs = foundSongs
-            print("扫描结束，找到 \(self.songs.count) 首歌")
-        }
+        Task {
+                    var foundSongs: [Song] = []
+                    
+                    // 为了避免卡顿，我们在后台线程处理
+                    // 这里我们收集所有的 mp3 URL
+                    var mp3URLs: [URL] = []
+                    while let fileURL = enumerator?.nextObject() as? URL {
+                        if fileURL.pathExtension.lowercased() == "mp3" {
+                            mp3URLs.append(fileURL)
+                        }
+                    }
+                    
+                    // 逐个解析 (这里使用了 await)
+                    for fileURL in mp3URLs {
+                        let song = await MetadataService.parse(url: fileURL)
+                        foundSongs.append(song)
+                    }
+                    
+                    // 扫描全部结束后，回到主线程更新 UI
+                    await MainActor.run {
+                        self.songs = foundSongs
+                        print("扫描结束，更新 UI，共 \(self.songs.count) 首歌")
+                    }
+                }
     }
 }
