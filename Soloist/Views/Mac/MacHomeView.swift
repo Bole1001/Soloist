@@ -14,6 +14,9 @@ struct MacHomeView: View {
     // 2. 负责播放音乐和控制逻辑
     @StateObject private var playerService = AudioPlayerService()
     
+    // ✨ 优化：删除了不再需要的 @State desktopLyricsController
+    // 我们现在直接使用单例 DesktopLyricsController.shared
+    
     // 3. 控制歌词页显示的开关
     @State private var showLyricsPage = false
     
@@ -35,8 +38,6 @@ struct MacHomeView: View {
                 }
                 .listStyle(.sidebar)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 250)
-                // ✨ 修复：使用 safeAreaInset 替代 toolbar(.bottomBar)
-                // 这样可以把控件固定在侧边栏的最底部
                 .safeAreaInset(edge: .bottom) {
                     HStack {
                         // 1. 添加文件夹按钮 (+)
@@ -47,7 +48,7 @@ struct MacHomeView: View {
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundColor(.secondary)
                         }
-                        .buttonStyle(.borderless) // 去掉默认按钮背景，更简洁
+                        .buttonStyle(.borderless)
                         .help("添加音乐文件夹")
                         
                         Spacer()
@@ -59,13 +60,12 @@ struct MacHomeView: View {
                         
                         Spacer()
                         
-                        // 为了视觉平衡，右边也占个位(或者留空)
                         Color.clear.frame(width: 14, height: 14)
                     }
                     .padding(.vertical, 12)
                     .padding(.horizontal, 16)
-                    .background(Color(nsColor: .controlBackgroundColor)) // 保持和侧边栏背景一致
-                    .overlay(Divider(), alignment: .top) // 顶部加一条细分割线
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .overlay(Divider(), alignment: .top)
                 }
                 
             } detail: {
@@ -151,9 +151,14 @@ struct MacHomeView: View {
                 .zIndex(1)
             }
         }
+        .onAppear {
+            // ✨ 关键：把播放服务注入给悬浮窗控制器
+            DesktopLyricsController.shared.setup(with: playerService)
+        }
         .animation(.easeInOut(duration: 0.3), value: showLyricsPage)
         
-        // Touch Bar 支持
+        // ✨ Touch Bar 支持
+        // 这里的代码是正确的，不需要改！
         .touchBar {
             Text(playerService.currentLyric.isEmpty ? (playerService.currentSong?.title ?? "Soloist") : playerService.currentLyric)
                 .font(.headline)

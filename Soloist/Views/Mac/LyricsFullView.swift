@@ -15,7 +15,7 @@ struct LyricsFullView: View {
     
     var body: some View {
         ZStack {
-            // --- 1. 背景层 (模糊图 或 渐变色) ---
+            // --- 1. 背景层 ---
             if let data = playerService.currentSong?.artworkData,
                let nsImage = NSImage(data: data) {
                 GeometryReader { geo in
@@ -23,9 +23,13 @@ struct LyricsFullView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: geo.size.width, height: geo.size.height)
+                        // ✨ 优化1：加上 drawingGroup()
+                        // 这会强制使用 GPU 渲染模糊，极大减少 CPU 发热和卡顿
+                        .drawingGroup()
                         .blur(radius: 60)
                         .overlay(Color.black.opacity(0.4))
                 }
+                .ignoresSafeArea() // 确保有图时也铺满，防止白条
             } else {
                 // 没图时的默认背景
                 Rectangle()
@@ -54,7 +58,6 @@ struct LyricsFullView: View {
                             .frame(width: 320, height: 320)
                             .cornerRadius(12)
                             .shadow(radius: 20)
-                            // ✨ 新增：点击封面关闭歌词页
                             .onTapGesture {
                                 withAnimation {
                                     showLyrics = false
@@ -73,7 +76,6 @@ struct LyricsFullView: View {
                                 .font(.system(size: 120))
                                 .foregroundColor(.white.opacity(0.3))
                         }
-                        // ✨ 新增：点击占位图也能关闭
                         .onTapGesture {
                             withAnimation {
                                 showLyrics = false
@@ -116,17 +118,17 @@ struct LyricsFullView: View {
                     } else {
                         ScrollViewReader { proxy in
                             ScrollView(showsIndicators: false) {
-                                VStack(alignment: .leading, spacing: 30) {
+                                // ✨ 优化2：将 VStack 改为 LazyVStack
+                                // 只渲染看得到的歌词，解决长列表卡顿问题
+                                LazyVStack(alignment: .leading, spacing: 30) {
                                     ForEach(playerService.lyrics) { line in
                                         Text(line.text)
                                             .font(.system(size: isCurrentLine(line) ? 32 : 20,
                                                           weight: isCurrentLine(line) ? .bold : .medium))
                                             .foregroundColor(isCurrentLine(line) ? .white : .white.opacity(0.4))
-                                            .animation(.spring(), value: playerService.currentLyric)
+                                            // 稍微调快动画，减少拖泥带水的感觉
+                                            .animation(.easeInOut(duration: 0.2), value: playerService.currentLyric)
                                             .id(line.id)
-                                            .onTapGesture {
-                                                // 预留点击功能
-                                            }
                                     }
                                 }
                                 .padding(.vertical, 300)
@@ -140,8 +142,6 @@ struct LyricsFullView: View {
                 .frame(maxWidth: 500)
             }
             .padding(40)
-            
-            // (右上角的关闭按钮已删除)
         }
         .background(Color.black)
     }

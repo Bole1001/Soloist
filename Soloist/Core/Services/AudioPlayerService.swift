@@ -30,7 +30,7 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published var lyrics: [LyricLine] = []
     
     // 随机模式开关
-    @Published var isShuffleMode: Bool = false {
+    @Published var isShuffleMode: Bool = true {
         didSet {
             if isShuffleMode {
                 shufflePlaylist(keepCurrentAtTop: true)

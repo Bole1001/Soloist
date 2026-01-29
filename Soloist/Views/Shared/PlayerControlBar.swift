@@ -53,20 +53,6 @@ struct PlayerControlBar: View {
             
             // --- 2. 中间：歌词 + 控制按钮 ---
             VStack(spacing: 6) {
-                // 歌词显示区域
-                if !playerService.currentLyric.isEmpty {
-                    Text(playerService.currentLyric)
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .foregroundColor(.blue) // 高亮颜色
-                        .lineLimit(1)
-                        .multilineTextAlignment(.center)
-                        .id(playerService.currentLyric)
-                        .transition(.opacity.animation(.easeInOut(duration: 0.2)))
-                } else {
-                    Text(" ")
-                        .font(.system(size: 14))
-                }
-                
                 // 控制按钮组
                 HStack(spacing: 24) {
                     // 1. 随机播放
@@ -106,6 +92,18 @@ struct PlayerControlBar: View {
                     }
                     .buttonStyle(.plain)
                     .help("循环播放")
+                    
+                    // ✨ 6. 桌面歌词开关
+                    Button(action: {
+                        // 直接调用单例
+                        DesktopLyricsController.shared.toggle()
+                    }) {
+                        Image(systemName: "pip.enter")
+                            .font(.system(size: 15))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("桌面悬浮歌词")
                 }
             }
             .frame(maxWidth: 400)
