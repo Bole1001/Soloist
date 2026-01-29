@@ -8,82 +8,116 @@
 import SwiftUI
 
 struct MacHomeView: View {
-    // 1. 实例化我们在 Core 里写的服务
-    // @StateObject 意味着这个对象随 View 的生命周期存在
+    // 1. 负责扫描硬盘和管理文件权限
     @StateObject private var libraryService = LocalLibraryService()
-    // @StateObject 保证这个对象在 View 存活期间一直存在
-        @StateObject private var playerService = AudioPlayerService()
+    
+    // 2. 负责播放音乐和控制逻辑
+    @StateObject private var playerService = AudioPlayerService()
+    
+    // 3. 控制歌词页显示的开关
+    @State private var showLyricsPage = false
     
     var body: some View {
-        // 2. 左右分栏布局 (Mac 经典布局)
-        NavigationSplitView {
-            // 左侧：侧边栏 (Sidebar)
-            List {
-                Button("扫描文件夹") {
-                    openFolderPicker()
-                }
-                .buttonStyle(.borderedProminent) // 显眼的按钮风格
-                .padding(.vertical)
-                
-                // 显示扫描到的歌曲数量
-                Text("共找到 \(libraryService.songs.count) 首歌")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .navigationSplitViewColumnWidth(min: 200, ideal: 250)
+        // ✨ 修改点 1: 最外层用 ZStack 包裹，为了做图层叠加
+        ZStack {
             
-        } detail: {
-            // 右侧：歌曲列表 (Detail)
-            if libraryService.songs.isEmpty {
-                Text("请点击左侧按钮扫描音乐文件夹")
-                    .foregroundStyle(.secondary)
-            } else {
-                // 3. 渲染歌曲列表
-                List(libraryService.songs) { song in
-                    HStack {
-                        if let data = song.artworkData, let nsImage = NSImage(data: data) {
-                                // 1. 如果有封面数据，显示封面
-                                Image(nsImage: nsImage)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(width: 40, height: 40)
-                                    .cornerRadius(4)
-                                    .clipped() // 防止图片比例不对导致溢出
-                            } else {
-                                // 2. 如果没封面，还是显示默认图标
-                                Image(systemName: "music.note")
-                                    .frame(width: 40, height: 40)
-                                    .background(Color.gray.opacity(0.2))
-                                    .cornerRadius(4)
+            // --- 图层 1: 主界面 (SplitView) ---
+            NavigationSplitView {
+                // 左侧：侧边栏
+                List {
+                    Button("扫描文件夹") {
+                        openFolderPicker()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.vertical)
+                    
+                    Text("共找到 \(libraryService.songs.count) 首歌")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .navigationSplitViewColumnWidth(min: 200, ideal: 250)
+                
+            } detail: {
+                // 右侧：内容详情
+                VStack(spacing: 0) {
+                    
+                    // 歌曲列表区域
+                    if libraryService.songs.isEmpty {
+                        Text("请点击左侧按钮扫描音乐文件夹")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        List(libraryService.songs) { song in
+                            HStack {
+                                // 封面
+                                if let data = song.artworkData, let nsImage = NSImage(data: data) {
+                                    Image(nsImage: nsImage)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: 40, height: 40)
+                                        .cornerRadius(4)
+                                        .clipped()
+                                } else {
+                                    Image(systemName: "music.note")
+                                        .frame(width: 40, height: 40)
+                                        .background(Color.gray.opacity(0.2))
+                                        .cornerRadius(4)
+                                }
+                                
+                                // 歌名与歌手
+                                VStack(alignment: .leading) {
+                                    Text(song.title)
+                                        .font(.headline)
+                                        .foregroundColor(playerService.currentSong?.id == song.id ? .blue : .primary)
+                                    Text(song.artist)
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                Spacer()
+                                
+                                // 播放状态图标
+                                if playerService.currentSong?.id == song.id && playerService.isPlaying {
+                                    Image(systemName: "speaker.wave.2.fill")
+                                        .foregroundColor(.blue)
+                                }
                             }
-                        
-                        VStack(alignment: .leading) {
-                            Text(song.title)
-                                .font(.headline)
-                                .foregroundColor(playerService.currentSong?.id == song.id ? .blue : .primary)
-                            Text(song.artist)
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                                                
-                        // 播放图标状态
-                        if playerService.currentSong?.id == song.id && playerService.isPlaying {
-                            Image(systemName: "speaker.wave.2.fill")
-                                .foregroundColor(.blue)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                playerService.play(song: song, playlist: libraryService.songs)
+                            }
                         }
                     }
-                    .contentShape(Rectangle()) // 扩大点击区域
-                    .onTapGesture {
-                        // 交互：点击列表项，调用后端播放
-                        playerService.play(song: song)
+                    
+                    // 底部播放控制条
+                    if playerService.currentSong != nil {
+                        PlayerControlBar(
+                            playerService: playerService,
+                            showLyrics: $showLyricsPage // 传入绑定
+                        )
+                        .frame(height: 80)
+                        .transition(.move(edge: .bottom))
                     }
                 }
+            }
+            
+            // --- 图层 2: 歌词全屏页 (Overlay) ---
+            // ✨ 修改点 2: 不再用 .sheet，而是直接覆盖在上面
+            if showLyricsPage {
+                LyricsFullView(
+                    playerService: playerService,
+                    showLyrics: $showLyricsPage // 传入绑定，让它可以关闭自己
+                )
+                // ✨ 动画效果：从底部升起
+                .transition(.move(edge: .bottom))
+                .zIndex(1) // 确保在最上层
             }
         }
+        // ✨ 修改点 3: 绑定动画，当 showLyricsPage 变化时自动播放过渡动画
+        .animation(.easeInOut(duration: 0.3), value: showLyricsPage)
     }
     
-    // 打开文件夹选择面板 (Mac 专属逻辑)
+    // 打开文件夹选择面板
     func openFolderPicker() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -93,14 +127,12 @@ struct MacHomeView: View {
         
         panel.begin { response in
             if response == .OK, let url = panel.url {
-                // 调用 Service 开始干活
                 libraryService.scanAndSavePermission(at: url)
             }
         }
     }
 }
 
-// 预览代码 (供 Xcode 右侧画板使用)
 #Preview {
     MacHomeView()
 }

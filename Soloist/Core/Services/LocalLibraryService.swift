@@ -69,9 +69,8 @@ class LocalLibraryService: ObservableObject {
         }
     }
     
-    // 3. 原有的扫描逻辑 (稍微修改一下参数标签)
+    // 3. 原有的扫描逻辑
     func scanDirectory(at url: URL) {
-        // (保持之前的代码逻辑不变)
         print("开始扫描文件夹: \(url.path)")
         
         let fileManager = FileManager.default
@@ -82,28 +81,37 @@ class LocalLibraryService: ObservableObject {
         )
         
         Task {
-                    var foundSongs: [Song] = []
-                    
-                    // 为了避免卡顿，我们在后台线程处理
-                    // 这里我们收集所有的 mp3 URL
-                    var mp3URLs: [URL] = []
-                    while let fileURL = enumerator?.nextObject() as? URL {
-                        if fileURL.pathExtension.lowercased() == "mp3" {
-                            mp3URLs.append(fileURL)
-                        }
-                    }
-                    
-                    // 逐个解析 (这里使用了 await)
-                    for fileURL in mp3URLs {
-                        let song = await MetadataService.parse(url: fileURL)
-                        foundSongs.append(song)
-                    }
-                    
-                    // 扫描全部结束后，回到主线程更新 UI
-                    await MainActor.run {
-                        self.songs = foundSongs
-                        print("扫描结束，更新 UI，共 \(self.songs.count) 首歌")
+                var foundSongs: [Song] = []
+                
+                // 后台线程处理
+                // 收集所有的 mp3 URL
+                var mp3URLs: [URL] = []
+                while let fileURL = enumerator?.nextObject() as? URL {
+                    if fileURL.pathExtension.lowercased() == "mp3" {
+                        mp3URLs.append(fileURL)
                     }
                 }
+                
+                for fileURL in mp3URLs {
+                    // 1. 先解析 ID3
+                    var song = await MetadataService.parse(url: fileURL)
+                    
+                    // 2. 寻找同名 lrc 文件
+                    let lrcURL = fileURL.deletingPathExtension().appendingPathExtension("lrc")
+                    
+                    // 检查文件是否存在
+                    if FileManager.default.fileExists(atPath: lrcURL.path) {
+                        song.lrcURL = lrcURL // 如果存在，就存进去
+                    }
+                    
+                    foundSongs.append(song)
+                }
+                
+                // 扫描全部结束后，回到主线程更新 UI
+                await MainActor.run {
+                    self.songs = foundSongs
+                    print("扫描结束，共 \(self.songs.count) 首歌")
+                }
+            }
     }
 }
