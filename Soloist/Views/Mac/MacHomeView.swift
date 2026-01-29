@@ -115,6 +115,27 @@ struct MacHomeView: View {
         }
         // ✨ 修改点 3: 绑定动画，当 showLyricsPage 变化时自动播放过渡动画
         .animation(.easeInOut(duration: 0.3), value: showLyricsPage)
+        
+        // ✨✨✨ 新增功能：Touch Bar 支持 ✨✨✨
+        .touchBar {
+            // 1. 歌词显示 (最左侧，或者系统自动布局)
+            // 逻辑：如果有歌词显示歌词，没有歌词显示歌名
+            Text(playerService.currentLyric.isEmpty ? (playerService.currentSong?.title ?? "Soloist") : playerService.currentLyric)
+                .font(.headline)
+            
+            // 2. 控制按钮 (上一首 - 播放/暂停 - 下一首)
+            Button(action: { playerService.previous() }) {
+                Image(systemName: "backward.fill")
+            }
+            
+            Button(action: { playerService.togglePlayPause() }) {
+                Image(systemName: playerService.isPlaying ? "pause.fill" : "play.fill")
+            }
+            
+            Button(action: { playerService.next() }) {
+                Image(systemName: "forward.fill")
+            }
+        }
     }
     
     // 打开文件夹选择面板

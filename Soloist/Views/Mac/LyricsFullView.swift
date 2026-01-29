@@ -10,12 +10,12 @@ import SwiftUI
 struct LyricsFullView: View {
     @ObservedObject var playerService: AudioPlayerService
     
-    // ✨ 修改点 1: 接收父视图传来的开关，用来手动关闭自己
+    // 接收父视图传来的开关，用来手动关闭自己
     @Binding var showLyrics: Bool
     
     var body: some View {
         ZStack {
-            // --- 1. 背景层 (模糊的封面大图) ---
+            // --- 1. 背景层 (模糊图 或 渐变色) ---
             if let data = playerService.currentSong?.artworkData,
                let nsImage = NSImage(data: data) {
                 GeometryReader { geo in
@@ -27,46 +27,98 @@ struct LyricsFullView: View {
                         .overlay(Color.black.opacity(0.4))
                 }
             } else {
-                Color.black.opacity(0.9)
+                // ✨ 没图时的默认背景：深色渐变，比纯黑更有质感
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: [Color(white: 0.2), Color.black]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .ignoresSafeArea()
             }
             
             // --- 2. 内容层 ---
-            HStack(spacing: 40) {
-                // 左侧：清晰的专辑封面
-                if let data = playerService.currentSong?.artworkData,
-                   let nsImage = NSImage(data: data) {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 300, height: 300)
-                        .cornerRadius(12)
-                        .shadow(radius: 20)
+            HStack(spacing: 60) {
+                
+                // === 左侧：封面 + 控制按钮 ===
+                VStack(spacing: 40) {
+                    // 封面区域
+                    if let data = playerService.currentSong?.artworkData,
+                       let nsImage = NSImage(data: data) {
+                        // 有封面时显示封面
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 320, height: 320)
+                            .cornerRadius(12)
+                            .shadow(radius: 20)
+                    } else {
+                        // ✨ 没封面时显示默认占位图
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.white.opacity(0.1)) // 半透明灰色底
+                                .frame(width: 320, height: 320)
+                                .shadow(radius: 20)
+                            
+                            // 中间放个大大的音符图标
+                            Image(systemName: "music.quarternote.3")
+                                .font(.system(size: 120))
+                                .foregroundColor(.white.opacity(0.3))
+                        }
+                    }
+                    
+                    // 控制按钮组
+                    HStack(spacing: 40) {
+                        Button(action: { playerService.previous() }) {
+                            Image(systemName: "backward.fill")
+                                .font(.system(size: 24))
+                                .foregroundColor(.white.opacity(0.8))
+                        }
+                        .buttonStyle(.plain)
+                        
+                        Button(action: { playerService.togglePlayPause() }) {
+                            Image(systemName: playerService.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                                .font(.system(size: 60))
+                                .foregroundColor(.white)
+                        }
+                        .buttonStyle(.plain)
+                        
+                        Button(action: { playerService.next() }) {
+                            Image(systemName: "forward.fill")
+                                .font(.system(size: 24))
+                                .foregroundColor(.white.opacity(0.8))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 
-                // 右侧：滚动歌词列表
+                // === 右侧：滚动歌词列表 ===
                 VStack {
                     if playerService.lyrics.isEmpty {
                         Text("暂无歌词")
                             .font(.title)
-                            .foregroundColor(.gray)
+                            .foregroundColor(.white.opacity(0.5))
                     } else {
                         ScrollViewReader { proxy in
                             ScrollView(showsIndicators: false) {
-                                VStack(alignment: .leading, spacing: 25) {
+                                VStack(alignment: .leading, spacing: 30) {
                                     ForEach(playerService.lyrics) { line in
                                         Text(line.text)
-                                            .font(.system(size: isCurrentLine(line) ? 28 : 18,
-                                                          weight: isCurrentLine(line) ? .bold : .regular))
-                                            .foregroundColor(isCurrentLine(line) ? .white : .white.opacity(0.5))
+                                            .font(.system(size: isCurrentLine(line) ? 32 : 20,
+                                                          weight: isCurrentLine(line) ? .bold : .medium))
+                                            .foregroundColor(isCurrentLine(line) ? .white : .white.opacity(0.4))
                                             .animation(.spring(), value: playerService.currentLyric)
                                             .id(line.id)
                                             .onTapGesture {
-                                                // (可选) 点击跳转
+                                                // 预留点击功能
                                             }
                                     }
                                 }
                                 .padding(.vertical, 300)
                             }
+                            // 修复后的 onChange 写法
                             .onChange(of: playerService.currentLyric) {
                                 scrollToCurrentLine(proxy: proxy)
                             }
@@ -81,24 +133,25 @@ struct LyricsFullView: View {
             VStack {
                 HStack {
                     Spacer()
-                    // ✨ 修改点 2: 点击关闭时，把变量设为 false，带动画关闭
                     Button(action: {
                         withAnimation {
                             showLyrics = false
                         }
                     }) {
-                        Image(systemName: "chevron.down.circle.fill") // 换个向下的箭头图标表示收起
-                            .font(.system(size: 30))
-                            .foregroundColor(.white.opacity(0.6))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundColor(.white.opacity(0.5))
+                            .padding(20)
+                            .background(Color.white.opacity(0.1))
+                            .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
                 }
                 Spacer()
             }
-            .padding(30)
+            .padding(20)
         }
-        // 去掉了 .frame(minWidth...) 限制，让它自适应父容器
-        .background(Color.black) // 防止透视到底部列表
+        .background(Color.black)
     }
     
     func isCurrentLine(_ line: LyricLine) -> Bool {

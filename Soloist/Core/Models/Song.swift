@@ -11,17 +11,25 @@ struct Song: Identifiable, Hashable, Codable {
     var id: UUID = UUID()
     var title: String
     var artist: String
-    var url: URL // 歌曲在硬盘上的物理路径
-    var artworkData: Data?
-    var lrcURL: URL? // LRC 文件的路径
+    var url: URL
+    var artworkData: Data? // 封面
+    
+    var lrcURL: URL?       // 外挂歌词路径 (.lrc 文件)
+    var embeddedLyrics: String? // ✨ 新增：内嵌歌词文本 (MP3 内部自带的)
+    
+    // 初始化方法
+    init(url: URL,
+         title: String? = nil,
+         artist: String? = nil,
+         artworkData: Data? = nil,
+         lrcURL: URL? = nil,
+         embeddedLyrics: String? = nil) { // ✨ 参数里加上它
         
-    // 修改初始化方法，增加默认值
-    init(url: URL, title: String? = nil, artist: String? = nil, artworkData: Data? = nil, lrcURL: URL? = nil) {
-            self.url = url
-            // 如果读不到 ID3 title，就兜底使用文件名
-            self.title = title ?? url.deletingPathExtension().lastPathComponent
-            self.artist = artist ?? "Unknown Artist"
-            self.artworkData = artworkData
-            self.lrcURL = lrcURL // 赋值
-        }
+        self.url = url
+        self.title = title ?? url.deletingPathExtension().lastPathComponent
+        self.artist = artist ?? "Unknown Artist"
+        self.artworkData = artworkData
+        self.lrcURL = lrcURL
+        self.embeddedLyrics = embeddedLyrics
+    }
 }
