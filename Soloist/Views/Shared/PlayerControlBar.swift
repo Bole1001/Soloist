@@ -10,7 +10,7 @@ import SwiftUI
 struct PlayerControlBar: View {
     @ObservedObject var playerService: AudioPlayerService
     
-    // ✨ 新增：接收父视图传来的开关变量
+    // 接收父视图传来的开关变量
     @Binding var showLyrics: Bool
     
     var body: some View {
@@ -45,10 +45,9 @@ struct PlayerControlBar: View {
             }
             .contentShape(Rectangle()) // 确保点击区域覆盖整个左侧
             .onTapGesture {
-                // ✨ 点击触发歌词页
                 showLyrics.toggle()
             }
-            .help("点击查看完整歌词") // 鼠标悬停提示
+            .help("点击查看完整歌词")
             
             Spacer()
             
@@ -61,32 +60,52 @@ struct PlayerControlBar: View {
                         .foregroundColor(.blue) // 高亮颜色
                         .lineLimit(1)
                         .multilineTextAlignment(.center)
-                        // 歌词切换动画
                         .id(playerService.currentLyric)
                         .transition(.opacity.animation(.easeInOut(duration: 0.2)))
                 } else {
-                    // 占位符，防止布局跳动
                     Text(" ")
                         .font(.system(size: 14))
                 }
                 
-                // 控制按钮
-                HStack(spacing: 30) {
+                // 控制按钮组
+                HStack(spacing: 24) {
+                    // 1. 随机播放
+                    Button(action: { playerService.toggleShuffle() }) {
+                        Image(systemName: "shuffle")
+                            .font(.system(size: 15))
+                            .foregroundColor(playerService.isShuffleMode ? .blue : .secondary.opacity(0.6))
+                    }
+                    .buttonStyle(.plain)
+                    .help("随机播放")
+                    
+                    // 2. 上一首
                     Button(action: { playerService.previous() }) {
                         Image(systemName: "backward.fill").font(.title3)
                     }
                     .buttonStyle(.plain)
                     
+                    // 3. 播放/暂停
                     Button(action: { playerService.togglePlayPause() }) {
                         Image(systemName: playerService.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                             .font(.system(size: 38))
                     }
                     .buttonStyle(.plain)
                     
+                    // 4. 下一首
                     Button(action: { playerService.next() }) {
                         Image(systemName: "forward.fill").font(.title3)
                     }
                     .buttonStyle(.plain)
+                    
+                    // ✨ 5. 新增：循环播放
+                    Button(action: { playerService.toggleLoop() }) {
+                        Image(systemName: "repeat")
+                            .font(.system(size: 15))
+                            // 激活变蓝 (默认是激活的)，关闭变灰
+                            .foregroundColor(playerService.isLoopMode ? .blue : .secondary.opacity(0.6))
+                    }
+                    .buttonStyle(.plain)
+                    .help("循环播放")
                 }
             }
             .frame(maxWidth: 400)
@@ -108,7 +127,7 @@ struct PlayerControlBar: View {
         .overlay(Divider(), alignment: .top)
     }
     
-    // 辅助函数：格式化时间 00:00
+    // 辅助函数：格式化时间
     func formatTime(_ time: TimeInterval) -> String {
         let minutes = Int(time) / 60
         let seconds = Int(time) % 60

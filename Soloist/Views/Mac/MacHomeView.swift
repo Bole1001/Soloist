@@ -17,35 +17,75 @@ struct MacHomeView: View {
     // 3. 控制歌词页显示的开关
     @State private var showLyricsPage = false
     
+    // 4. (UI优化) 侧边栏选中项
+    @State private var selection: String? = "all"
+    
     var body: some View {
-        // ✨ 修改点 1: 最外层用 ZStack 包裹，为了做图层叠加
         ZStack {
             
             // --- 图层 1: 主界面 (SplitView) ---
             NavigationSplitView {
-                // 左侧：侧边栏
-                List {
-                    Button("扫描文件夹") {
-                        openFolderPicker()
+                // === 左侧：侧边栏 ===
+                List(selection: $selection) {
+                    Section("资料库") {
+                        NavigationLink(value: "all") {
+                            Label("所有音乐", systemImage: "music.note.list")
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.vertical)
-                    
-                    Text("共找到 \(libraryService.songs.count) 首歌")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
                 }
+                .listStyle(.sidebar)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 250)
+                // ✨ 修复：使用 safeAreaInset 替代 toolbar(.bottomBar)
+                // 这样可以把控件固定在侧边栏的最底部
+                .safeAreaInset(edge: .bottom) {
+                    HStack {
+                        // 1. 添加文件夹按钮 (+)
+                        Button(action: {
+                            openFolderPicker()
+                        }) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.borderless) // 去掉默认按钮背景，更简洁
+                        .help("添加音乐文件夹")
+                        
+                        Spacer()
+                        
+                        // 2. 歌曲数量统计
+                        Text("\(libraryService.songs.count) 首歌")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Spacer()
+                        
+                        // 为了视觉平衡，右边也占个位(或者留空)
+                        Color.clear.frame(width: 14, height: 14)
+                    }
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 16)
+                    .background(Color(nsColor: .controlBackgroundColor)) // 保持和侧边栏背景一致
+                    .overlay(Divider(), alignment: .top) // 顶部加一条细分割线
+                }
                 
             } detail: {
-                // 右侧：内容详情
+                // === 右侧：内容详情 ===
                 VStack(spacing: 0) {
                     
                     // 歌曲列表区域
                     if libraryService.songs.isEmpty {
-                        Text("请点击左侧按钮扫描音乐文件夹")
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        VStack(spacing: 20) {
+                            Image(systemName: "music.note.list")
+                                .font(.system(size: 50))
+                                .foregroundColor(.secondary.opacity(0.5))
+                            Text("暂无音乐")
+                                .font(.title2)
+                                .foregroundColor(.secondary)
+                            Text("点击左下角的 + 号添加文件夹")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         List(libraryService.songs) { song in
                             HStack {
@@ -93,7 +133,7 @@ struct MacHomeView: View {
                     if playerService.currentSong != nil {
                         PlayerControlBar(
                             playerService: playerService,
-                            showLyrics: $showLyricsPage // 传入绑定
+                            showLyrics: $showLyricsPage
                         )
                         .frame(height: 80)
                         .transition(.move(edge: .bottom))
@@ -102,39 +142,21 @@ struct MacHomeView: View {
             }
             
             // --- 图层 2: 歌词全屏页 (Overlay) ---
-            // ✨ 修改点 2: 不再用 .sheet，而是直接覆盖在上面
             if showLyricsPage {
                 LyricsFullView(
                     playerService: playerService,
-                    showLyrics: $showLyricsPage // 传入绑定，让它可以关闭自己
+                    showLyrics: $showLyricsPage
                 )
-                // ✨ 动画效果：从底部升起
                 .transition(.move(edge: .bottom))
-                .zIndex(1) // 确保在最上层
+                .zIndex(1)
             }
         }
-        // ✨ 修改点 3: 绑定动画，当 showLyricsPage 变化时自动播放过渡动画
         .animation(.easeInOut(duration: 0.3), value: showLyricsPage)
         
-        // ✨✨✨ 新增功能：Touch Bar 支持 ✨✨✨
+        // Touch Bar 支持
         .touchBar {
-            // 1. 歌词显示 (最左侧，或者系统自动布局)
-            // 逻辑：如果有歌词显示歌词，没有歌词显示歌名
             Text(playerService.currentLyric.isEmpty ? (playerService.currentSong?.title ?? "Soloist") : playerService.currentLyric)
                 .font(.headline)
-            
-            // 2. 控制按钮 (上一首 - 播放/暂停 - 下一首)
-            Button(action: { playerService.previous() }) {
-                Image(systemName: "backward.fill")
-            }
-            
-            Button(action: { playerService.togglePlayPause() }) {
-                Image(systemName: playerService.isPlaying ? "pause.fill" : "play.fill")
-            }
-            
-            Button(action: { playerService.next() }) {
-                Image(systemName: "forward.fill")
-            }
         }
     }
     

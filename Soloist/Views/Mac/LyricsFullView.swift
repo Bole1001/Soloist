@@ -27,7 +27,7 @@ struct LyricsFullView: View {
                         .overlay(Color.black.opacity(0.4))
                 }
             } else {
-                // ✨ 没图时的默认背景：深色渐变，比纯黑更有质感
+                // 没图时的默认背景
                 Rectangle()
                     .fill(
                         LinearGradient(
@@ -47,26 +47,39 @@ struct LyricsFullView: View {
                     // 封面区域
                     if let data = playerService.currentSong?.artworkData,
                        let nsImage = NSImage(data: data) {
-                        // 有封面时显示封面
+                        // A. 有封面
                         Image(nsImage: nsImage)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                             .frame(width: 320, height: 320)
                             .cornerRadius(12)
                             .shadow(radius: 20)
+                            // ✨ 新增：点击封面关闭歌词页
+                            .onTapGesture {
+                                withAnimation {
+                                    showLyrics = false
+                                }
+                            }
+                            .help("点击收起歌词页")
                     } else {
-                        // ✨ 没封面时显示默认占位图
+                        // B. 没封面 (占位图)
                         ZStack {
                             RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.white.opacity(0.1)) // 半透明灰色底
+                                .fill(Color.white.opacity(0.1))
                                 .frame(width: 320, height: 320)
                                 .shadow(radius: 20)
                             
-                            // 中间放个大大的音符图标
                             Image(systemName: "music.quarternote.3")
                                 .font(.system(size: 120))
                                 .foregroundColor(.white.opacity(0.3))
                         }
+                        // ✨ 新增：点击占位图也能关闭
+                        .onTapGesture {
+                            withAnimation {
+                                showLyrics = false
+                            }
+                        }
+                        .help("点击收起歌词页")
                     }
                     
                     // 控制按钮组
@@ -118,7 +131,6 @@ struct LyricsFullView: View {
                                 }
                                 .padding(.vertical, 300)
                             }
-                            // 修复后的 onChange 写法
                             .onChange(of: playerService.currentLyric) {
                                 scrollToCurrentLine(proxy: proxy)
                             }
@@ -129,27 +141,7 @@ struct LyricsFullView: View {
             }
             .padding(40)
             
-            // --- 3. 关闭按钮 (右上角) ---
-            VStack {
-                HStack {
-                    Spacer()
-                    Button(action: {
-                        withAnimation {
-                            showLyrics = false
-                        }
-                    }) {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 24, weight: .bold))
-                            .foregroundColor(.white.opacity(0.5))
-                            .padding(20)
-                            .background(Color.white.opacity(0.1))
-                            .clipShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                }
-                Spacer()
-            }
-            .padding(20)
+            // (右上角的关闭按钮已删除)
         }
         .background(Color.black)
     }
