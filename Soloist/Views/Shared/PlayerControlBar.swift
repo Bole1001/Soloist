@@ -121,8 +121,6 @@ struct PlayerControlBar: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .background(.ultraThinMaterial) // 毛玻璃背景
-        .overlay(Divider(), alignment: .top)
     }
     
     // 辅助函数：格式化时间

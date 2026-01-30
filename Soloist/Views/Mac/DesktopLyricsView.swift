@@ -20,11 +20,11 @@ struct DesktopLyricsView: View {
                     .multilineTextAlignment(.center)
             } else {
                 // 如果没歌词，显示这个，证明窗口存在
-                Text("桌面歌词测试")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundColor(.yellow)
-                    .background(Color.black.opacity(0.5)) // 给字加个黑底
+                Text("暂无歌词")
+                    .font(.system(size: 40, weight: .heavy)) // 字号加大到 40
+                    .foregroundColor(.white)
+                    .shadow(color: .black, radius: 2, x: 2, y: 2) // 加阴影
+                    .multilineTextAlignment(.center)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
