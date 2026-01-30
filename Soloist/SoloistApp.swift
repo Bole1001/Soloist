@@ -14,12 +14,12 @@ struct SoloistApp: App {
     
     var body: some Scene {
         // --- 1. 主窗口 ---
-        WindowGroup(id: "MainWindow") {
-            MacHomeView()
-                .background(VisualEffect().ignoresSafeArea())
-        }
-        .windowStyle(.hiddenTitleBar)
-        .handlesExternalEvents(matching: Set(arrayLiteral: "MainWindow"))
+        Window("Soloist", id: "MainWindow") {
+                    MacHomeView()
+                        .background(VisualEffect().ignoresSafeArea())
+                }
+                
+                .windowStyle(.hiddenTitleBar)
         
         // --- 2. 菜单栏 (功能增强版) ---
         MenuBarExtra("Soloist", image: "MenuBarIcon") {
@@ -30,6 +30,13 @@ struct SoloistApp: App {
                 openWindow(id: "MainWindow")
             }
             .keyboardShortcut("o", modifiers: .command) // Cmd+O 快捷键
+            
+            Divider()
+            
+            Button("开启/关闭 触控栏歌词") {
+                    TouchBarManager.shared.toggle()
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
             
             Divider()
             
