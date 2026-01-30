@@ -140,7 +140,7 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
             
             // 先清空旧歌词，避免显示上一首的
             self.lyrics = []
-            self.currentLyric = ""
+            self.currentLyric = song.title
             
             // ————————————————
             // 🟢 策略 1: 本地 .lrc 文件 (最高优先级)
