@@ -18,6 +18,7 @@ import UIKit
 #endif
 
 class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
+    static let shared = AudioPlayerService()
     
     private var player: AVAudioPlayer?
     

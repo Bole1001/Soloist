@@ -9,24 +9,70 @@ import SwiftUI
 
 @main
 struct SoloistApp: App {
+    @StateObject private var playerService = AudioPlayerService.shared
+    @Environment(\.openWindow) var openWindow
+    
     var body: some Scene {
-        WindowGroup {
+        // --- 1. 主窗口 ---
+        WindowGroup(id: "MainWindow") {
             MacHomeView()
-                // 确保背景色能延伸到最顶部的"红绿灯"区域
                 .background(VisualEffect().ignoresSafeArea())
         }
-        // ✨ 核心修改：隐藏标题栏，内容满铺
         .windowStyle(.hiddenTitleBar)
+        .handlesExternalEvents(matching: Set(arrayLiteral: "MainWindow"))
+        
+        // --- 2. 菜单栏 (功能增强版) ---
+        MenuBarExtra("Soloist", image: "MenuBarIcon") {
+            
+            // --- 第一组：核心动作 ---
+            Button("显示主界面") {
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: "MainWindow")
+            }
+            .keyboardShortcut("o", modifiers: .command) // Cmd+O 快捷键
+            
+            Divider()
+            
+            // --- 第二组：播放控制 (在菜单里直接能看到歌名) ---
+            Text(playerService.currentSong?.title ?? "未播放")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            
+            HStack {
+                Button("上一首") { playerService.previous() }
+                
+                Button(playerService.isPlaying ? "暂停" : "播放") {
+                    playerService.togglePlayPause()
+                }
+                .keyboardShortcut(.space, modifiers: []) // 空格键播放/暂停 (当菜单打开时)
+                
+                Button("下一首") { playerService.next() }
+            }
+            
+            Divider()
+            
+            // --- 第三组：系统操作 ---
+            Button("桌面歌词") {
+                DesktopLyricsController.shared.toggle()
+            }
+            
+            Divider()
+            
+            Button("退出 Soloist") {
+                NSApplication.shared.terminate(nil)
+            }
+            .keyboardShortcut("q")
+        }
     }
 }
 
-// ✨ 一个小辅助组件：让窗口背景支持“毛玻璃”透视效果 (可选，但加上更有质感)
+// VisualEffect 保持不变
 struct VisualEffect: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
-        view.blendingMode = .behindWindow // 窗口背景混合模式
+        view.blendingMode = .behindWindow
         view.state = .active
-        view.material = .sidebar // 使用侧边栏那种深色半透明材质
+        view.material = .sidebar
         return view
     }
 

@@ -9,7 +9,7 @@ import SwiftUI
 
 struct MacHomeView: View {
     @StateObject private var libraryService = LocalLibraryService()
-    @StateObject private var playerService = AudioPlayerService()
+    @StateObject private var playerService = AudioPlayerService.shared
     @State private var showLyricsPage = false
     @State private var selection: String? = "all"
     
