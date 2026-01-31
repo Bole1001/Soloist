@@ -139,24 +139,29 @@ struct MacHomeView: View {
 struct HomeBackgroundView: View {
     @ObservedObject var playerService: AudioPlayerService
     
+    // ✨ 1. 新增：暂存当前加载好的背景图
+    @State private var currentArtwork: Data? = nil
+    
     var body: some View {
         GeometryReader { geo in
             Group {
-                if let data = playerService.currentSong?.artworkData,
+                // ✨ 2. 修改：读本地 State
+                if let data = currentArtwork,
                    let nsImage = NSImage(data: data) {
                     // 方案 A: 有封面，显示高斯模糊
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: geo.size.width, height: geo.size.height)
-                        .blur(radius: 80) // 大模糊，营造氛围
-                        .overlay(Color.black.opacity(0.2)) // 稍微压暗，保证文字可读性
+                        // 使用 GPU 渲染模糊，避免卡顿
+                        .drawingGroup()
+                        .blur(radius: 80)
+                        .overlay(Color.black.opacity(0.2))
                 } else {
                     // 方案 B: 没封面，显示高级的渐变极光色
                     ZStack {
-                        Color(nsColor: .windowBackgroundColor) // 底色
+                        Color(nsColor: .windowBackgroundColor)
                         
-                        // 两个渐变光球
                         Circle()
                             .fill(Color.blue.opacity(0.2))
                             .frame(width: 400, height: 400)
@@ -172,7 +177,15 @@ struct HomeBackgroundView: View {
                 }
             }
         }
-        .ignoresSafeArea() // 铺满全屏
+        .ignoresSafeArea()
+        // ✨ 3. 核心：监听切歌，异步加载背景图
+        .task(id: playerService.currentSong?.id) {
+            if let song = playerService.currentSong {
+                currentArtwork = await ArtworkLoader.loadArtwork(for: song)
+            } else {
+                currentArtwork = nil
+            }
+        }
     }
 }
 
@@ -182,15 +195,19 @@ struct SongListRow: View {
     @ObservedObject var playerService: AudioPlayerService
     let playlist: [Song]
     
+    // ✨ 1. 新增：每一行自己维护自己的小封面
+    @State private var rowArtwork: Data? = nil
+    
     var isPlayingThis: Bool {
         playerService.currentSong?.id == song.id
     }
     
     var body: some View {
         HStack(spacing: 14) {
-            // 1. 封面图
+            // 1. 封面图区域
             ZStack {
-                if let data = song.artworkData, let nsImage = NSImage(data: data) {
+                // ✨ 2. 修改：读本地 State
+                if let data = rowArtwork, let nsImage = NSImage(data: data) {
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -202,19 +219,26 @@ struct SongListRow: View {
             }
             .frame(width: 48, height: 48)
             .cornerRadius(8)
-            .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2) // 更重的阴影
+            .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+            // ✨ 3. 核心：只有这一行出现在屏幕上时，才去读图片
+            .task {
+                // 这是一个微小的优化：如果已经有图了就不读了
+                if rowArtwork == nil {
+                    rowArtwork = await ArtworkLoader.loadArtwork(for: song)
+                }
+            }
             
-            // 2. 文字信息 (使用 Primary 颜色，会自动适配背景)
+            // 2. 文字信息
             VStack(alignment: .leading, spacing: 4) {
                 Text(song.title)
                     .font(.system(size: 15, weight: .medium))
                     .foregroundColor(.primary)
                     .lineLimit(1)
-                    .shadow(color: .black.opacity(0.1), radius: 1) // 文字微投影
+                    .shadow(color: .black.opacity(0.1), radius: 1)
                 
                 Text(song.artist)
                     .font(.system(size: 13))
-                    .foregroundColor(.secondary) // 自动变灰白
+                    .foregroundColor(.secondary)
                     .lineLimit(1)
             }
             
@@ -223,32 +247,29 @@ struct SongListRow: View {
             // 3. 状态图标
             if isPlayingThis {
                 Image(systemName: playerService.isPlaying ? "speaker.wave.3.fill" : "speaker.fill")
-                    .foregroundStyle(.white) // 强行白色，在彩色背景上更显眼
+                    .foregroundStyle(.white)
                     .font(.title3)
-                    .shadow(color: .blue, radius: 5) // 发光效果
+                    .shadow(color: .blue, radius: 5)
             }
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
         .contentShape(Rectangle())
-        // ✨ 选中态升级：使用白色玻璃质感，而不是蓝色色块
+        // 选中态样式
         .padding(.horizontal, 4)
         .background(
-                    ZStack {
-                        if isPlayingThis {
-                            // 1. 底层：毛玻璃材质 (必须裁切！)
-                            Rectangle()
-                                .fill(.ultraThinMaterial)
-                                .clipShape(RoundedRectangle(cornerRadius: 12)) // 强制裁切成圆角
-                            
-                            // 2. 顶层：半透明白色提亮
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.white.opacity(0.2))
-                        }
-                    }
-                )
-                // 给整个圆角条再加一点外部缩进，防止它贴着屏幕边缘
-                .padding(.horizontal, 12)
+            ZStack {
+                if isPlayingThis {
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.white.opacity(0.2))
+                }
+            }
+        )
+        .padding(.horizontal, 12)
         .onTapGesture {
             playerService.play(song: song, playlist: playlist)
         }

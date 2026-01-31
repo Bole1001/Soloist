@@ -104,33 +104,56 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     
     // MARK: - 更新系统播放信息
     private func updateNowPlayingInfo() {
-        var info = [String: Any]()
-        
-        if let song = currentSong {
-            info[MPMediaItemPropertyTitle] = song.title
-            info[MPMediaItemPropertyArtist] = song.artist
-            info[MPMediaItemPropertyPlaybackDuration] = duration
-            info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = player?.currentTime
-            info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+            guard let song = currentSong else {
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+                return
+            }
             
-            // ✨ 修复：根据平台处理图片
-            if let data = song.artworkData {
-                #if os(macOS)
-                if let nsImage = NSImage(data: data) {
-                    let artwork = MPMediaItemArtwork(boundsSize: nsImage.size) { _ in return nsImage }
-                    info[MPMediaItemPropertyArtwork] = artwork
+            // --- 1. 先设置基础文字信息 (同步执行，立即生效) ---
+            // 这样用户切歌时，控制中心的名字会瞬间变化，不会有延迟
+            var info: [String: Any] = [
+                MPMediaItemPropertyTitle: song.title,
+                MPMediaItemPropertyArtist: song.artist,
+                MPMediaItemPropertyPlaybackDuration: duration,
+                MPNowPlayingInfoPropertyElapsedPlaybackTime: player?.currentTime ?? 0,
+                MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
+            ]
+            
+            // 先把文字推送到系统
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            
+            // --- 2. 后台异步加载封面 ---
+            // 这就是我们“去内存化”的核心：用的时候再去硬盘读
+            Task {
+                // 调用我们新写的工具类
+                if let data = await ArtworkLoader.loadArtwork(for: song) {
+                    
+                    #if os(macOS)
+                    if let nsImage = NSImage(data: data) {
+                        // 创建系统需要的 Artwork 对象
+                        let artwork = MPMediaItemArtwork(boundsSize: nsImage.size) { _ in return nsImage }
+                        
+                        // 取出当前的信息，把图片塞进去
+                        var currentInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? info
+                        currentInfo[MPMediaItemPropertyArtwork] = artwork
+                        
+                        // 再次更新 (这次带图了)
+                        MPNowPlayingInfoCenter.default().nowPlayingInfo = currentInfo
+                    }
+                    #else
+                    // iOS 逻辑
+                    if let uiImage = UIImage(data: data) {
+                        let artwork = MPMediaItemArtwork(boundsSize: uiImage.size) { _ in return uiImage }
+                        
+                        var currentInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? info
+                        currentInfo[MPMediaItemPropertyArtwork] = artwork
+                        
+                        MPNowPlayingInfoCenter.default().nowPlayingInfo = currentInfo
+                    }
+                    #endif
                 }
-                #else
-                if let uiImage = UIImage(data: data) {
-                    let artwork = MPMediaItemArtwork(boundsSize: uiImage.size) { _ in return uiImage }
-                    info[MPMediaItemPropertyArtwork] = artwork
-                }
-                #endif
             }
         }
-        
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-    }
     
     // MARK: - 歌词加载逻辑 (三级降级策略)
         private func loadLyricsForCurrentSong() {
@@ -213,14 +236,14 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     // MARK: - 文件操作
         
-        /// 将歌词保存到当前目录下的 Lyrics 文件夹中
+    /// 将歌词保存到当前目录下的 Lyrics 文件夹中
         private func saveLrcFile(content: String, for song: Song) {
             let fileManager = FileManager.default
             
-            // 1. 获取 MP3 所在的父目录 (例如 /Music/周杰伦/)
+            // 1. 获取 MP3 所在的父目录
             let parentDirectory = song.url.deletingLastPathComponent()
             
-            // 2. 构造 Lyrics 文件夹路径 (例如 /Music/周杰伦/Lyrics/)
+            // 2. 构造 Lyrics 文件夹路径
             let lyricsFolderURL = parentDirectory.appendingPathComponent("Lyrics", isDirectory: true)
             
             // 3. 构造最终的文件名 (例如 七里香.lrc)
@@ -228,7 +251,7 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
             let lrcURL = lyricsFolderURL.appendingPathComponent(fileName)
             
             do {
-                // 4. ✨ 关键步骤：检查 Lyrics 文件夹是否存在，不存在则创建
+                // 4. 检查 Lyrics 文件夹是否存在，不存在则创建
                 if !fileManager.fileExists(atPath: lyricsFolderURL.path) {
                     try fileManager.createDirectory(at: lyricsFolderURL, withIntermediateDirectories: true, attributes: nil)
                     print("📂 创建歌词文件夹: \(lyricsFolderURL.lastPathComponent)")
@@ -240,10 +263,24 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 
                 // 6. 更新内存中的 Song 对象
                 // 这样不用重启 App，策略 1 (本地文件) 也能直接找到这个新路径
-                if var updatedSong = self.currentSong, updatedSong.id == song.id {
-                    updatedSong.lrcURL = lrcURL
-                    self.currentSong = updatedSong
+                DispatchQueue.main.async {
+                    if let current = self.currentSong, current.id == song.id {
+                        
+                        // ✨ 修复：删除了 artworkData 参数
+                        let updatedSong = Song(
+                            id: current.id,
+                            url: current.url,
+                            title: current.title,
+                            artist: current.artist,
+                            // ❌ artworkData: current.artworkData, <-- 删掉这行
+                            lrcURL: lrcURL, // 👈 填入新生成的歌词路径
+                            embeddedLyrics: current.embeddedLyrics
+                        )
+                        
+                        self.currentSong = updatedSong
+                    }
                 }
+                
             } catch {
                 print("⚠️ 保存歌词失败 (可能是没有文件夹创建权限): \(error)")
             }

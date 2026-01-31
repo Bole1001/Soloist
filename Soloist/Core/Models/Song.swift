@@ -8,27 +8,33 @@
 import Foundation
 
 struct Song: Identifiable, Hashable, Codable {
-    var id: UUID = UUID()
-    var title: String
-    var artist: String
-    var url: URL
-    var artworkData: Data? // 封面
+    let id: UUID
+    let url: URL
+    let title: String
+    let artist: String
+    // ❌ let artworkData: Data?  <-- 彻底删掉这行
     
-    var lrcURL: URL?       // 外挂歌词路径 (.lrc 文件)
-    var embeddedLyrics: String? // ✨ 新增：内嵌歌词文本 (MP3 内部自带的)
+    let lrcURL: URL?
+    let embeddedLyrics: String?
     
-    // 初始化方法
-    init(url: URL,
+    enum CodingKeys: String, CodingKey {
+        case id, url, title, artist, lrcURL, embeddedLyrics
+    }
+    
+    // 初始化方法也简化了
+    init(id: UUID = UUID(),
+         url: URL,
          title: String? = nil,
          artist: String? = nil,
-         artworkData: Data? = nil,
+         // artworkData 参数删掉
          lrcURL: URL? = nil,
-         embeddedLyrics: String? = nil) { // ✨ 参数里加上它
+         embeddedLyrics: String? = nil) {
         
+        self.id = id
         self.url = url
         self.title = title ?? url.deletingPathExtension().lastPathComponent
         self.artist = artist ?? "Unknown Artist"
-        self.artworkData = artworkData
+        // self.artworkData 赋值删掉
         self.lrcURL = lrcURL
         self.embeddedLyrics = embeddedLyrics
     }

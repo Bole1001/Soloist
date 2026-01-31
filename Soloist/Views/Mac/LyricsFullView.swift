@@ -13,23 +13,26 @@ struct LyricsFullView: View {
     // 接收父视图传来的开关，用来手动关闭自己
     @Binding var showLyrics: Bool
     
+    // ✨ 1. 新增：用于存储异步加载的高清封面
+    @State private var currentArtwork: Data? = nil
+    
     var body: some View {
         ZStack {
-            // --- 1. 背景层 ---
-            if let data = playerService.currentSong?.artworkData,
+            // --- 1. 背景层 (模糊大图) ---
+            // ✨ 2. 修改：读取本地 State 里的图片
+            if let data = currentArtwork,
                let nsImage = NSImage(data: data) {
                 GeometryReader { geo in
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: geo.size.width, height: geo.size.height)
-                        // ✨ 优化1：加上 drawingGroup()
-                        // 这会强制使用 GPU 渲染模糊，极大减少 CPU 发热和卡顿
+                        // 强制使用 GPU 渲染模糊，极大减少 CPU 发热和卡顿
                         .drawingGroup()
                         .blur(radius: 60)
                         .overlay(Color.black.opacity(0.4))
                 }
-                .ignoresSafeArea() // 确保有图时也铺满，防止白条
+                .ignoresSafeArea()
             } else {
                 // 没图时的默认背景
                 Rectangle()
@@ -49,7 +52,8 @@ struct LyricsFullView: View {
                 // === 左侧：封面 + 控制按钮 ===
                 VStack(spacing: 40) {
                     // 封面区域
-                    if let data = playerService.currentSong?.artworkData,
+                    // ✨ 3. 修改：读取本地 State 里的图片
+                    if let data = currentArtwork,
                        let nsImage = NSImage(data: data) {
                         // A. 有封面
                         Image(nsImage: nsImage)
@@ -118,8 +122,7 @@ struct LyricsFullView: View {
                     } else {
                         ScrollViewReader { proxy in
                             ScrollView(showsIndicators: false) {
-                                // ✨ 优化2：将 VStack 改为 LazyVStack
-                                // 只渲染看得到的歌词，解决长列表卡顿问题
+                                // LazyVStack 只渲染看得到的歌词，解决长列表卡顿问题
                                 LazyVStack(alignment: .leading, spacing: 30) {
                                     ForEach(playerService.lyrics) { line in
                                         Text(line.text)
@@ -144,6 +147,15 @@ struct LyricsFullView: View {
             .padding(40)
         }
         .background(Color.black)
+        // ✨ 4. 核心逻辑：监听切歌事件，异步加载高清大图
+        .task(id: playerService.currentSong?.id) {
+            if let song = playerService.currentSong {
+                // 只有在打开歌词大图页面时，才去加载这张大图，极大节省内存
+                currentArtwork = await ArtworkLoader.loadArtwork(for: song)
+            } else {
+                currentArtwork = nil
+            }
+        }
     }
     
     func isCurrentLine(_ line: LyricLine) -> Bool {

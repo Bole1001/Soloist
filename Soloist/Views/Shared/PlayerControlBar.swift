@@ -13,12 +13,16 @@ struct PlayerControlBar: View {
     // 接收父视图传来的开关变量
     @Binding var showLyrics: Bool
     
+    // ✨ 新增：用于存储异步加载的封面图片数据
+    @State private var currentArtwork: Data? = nil
+    
     var body: some View {
         HStack(spacing: 20) {
             
-            // --- 1. 左侧：封面与歌名 (点击可打开歌词页) ---
+            // --- 1. 左侧：封面与歌名 ---
             HStack {
-                if let data = playerService.currentSong?.artworkData,
+                // ✨ 修改点：不再读 song.artworkData，而是读本地 State 里的 currentArtwork
+                if let data = currentArtwork,
                    let nsImage = NSImage(data: data) {
                     Image(nsImage: nsImage)
                         .resizable()
@@ -26,6 +30,7 @@ struct PlayerControlBar: View {
                         .frame(width: 48, height: 48)
                         .cornerRadius(6)
                 } else {
+                    // 占位图
                     RoundedRectangle(cornerRadius: 6)
                         .fill(Color.gray.opacity(0.3))
                         .frame(width: 48, height: 48)
@@ -43,7 +48,7 @@ struct PlayerControlBar: View {
                 }
                 .frame(maxWidth: 150, alignment: .leading)
             }
-            .contentShape(Rectangle()) // 确保点击区域覆盖整个左侧
+            .contentShape(Rectangle())
             .onTapGesture {
                 showLyrics.toggle()
             }
@@ -53,7 +58,6 @@ struct PlayerControlBar: View {
             
             // --- 2. 中间：歌词 + 控制按钮 ---
             VStack(spacing: 6) {
-                // 控制按钮组
                 HStack(spacing: 24) {
                     // 1. 随机播放
                     Button(action: { playerService.toggleShuffle() }) {
@@ -62,7 +66,6 @@ struct PlayerControlBar: View {
                             .foregroundColor(playerService.isShuffleMode ? .blue : .secondary.opacity(0.6))
                     }
                     .buttonStyle(.plain)
-                    .help("随机播放")
                     
                     // 2. 上一首
                     Button(action: { playerService.previous() }) {
@@ -83,19 +86,16 @@ struct PlayerControlBar: View {
                     }
                     .buttonStyle(.plain)
                     
-                    // ✨ 5. 新增：循环播放
+                    // 5. 循环播放
                     Button(action: { playerService.toggleLoop() }) {
                         Image(systemName: "repeat")
                             .font(.system(size: 15))
-                            // 激活变蓝 (默认是激活的)，关闭变灰
                             .foregroundColor(playerService.isLoopMode ? .blue : .secondary.opacity(0.6))
                     }
                     .buttonStyle(.plain)
-                    .help("循环播放")
                     
-                    // ✨ 6. 桌面歌词开关
+                    // 6. 桌面歌词开关
                     Button(action: {
-                        // 直接调用单例
                         DesktopLyricsController.shared.toggle()
                     }) {
                         Image(systemName: "pip.enter")
@@ -121,9 +121,19 @@ struct PlayerControlBar: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
+        // ✨✨✨ 核心逻辑：监听歌曲 ID 变化，异步加载图片 ✨✨✨
+        // .task(id:) 是 SwiftUI 专门处理异步刷新的神器，比 .onChange 更好用
+        .task(id: playerService.currentSong?.id) {
+            if let song = playerService.currentSong {
+                // 有歌 -> 去硬盘挖图片 (不卡顿)
+                currentArtwork = await ArtworkLoader.loadArtwork(for: song)
+            } else {
+                // 没歌 -> 清空图片
+                currentArtwork = nil
+            }
+        }
     }
     
-    // 辅助函数：格式化时间
     func formatTime(_ time: TimeInterval) -> String {
         let minutes = Int(time) / 60
         let seconds = Int(time) % 60

@@ -15,55 +15,43 @@ struct MetadataService {
         
         var title: String?
         var artist: String?
-        var artworkData: Data?
         var lyrics: String?
         
+        // 1. 只加载必要的文字信息，不需要 .commonKeyArtwork
         do {
-            // 加载所有元数据
             let metadata = try await asset.load(.metadata)
             
             for item in metadata {
-                
-                // --- A. 先处理通用键 (歌名、歌手、封面) ---
                 if let commonKey = item.commonKey {
                     switch commonKey {
                     case .commonKeyTitle:
                         title = try? await item.load(.stringValue)
                     case .commonKeyArtist:
                         artist = try? await item.load(.stringValue)
-                    case .commonKeyArtwork:
-                        if let data = try? await item.load(.dataValue) {
-                            artworkData = data
-                        } else if let value = try? await item.load(.value) as? Data {
-                            artworkData = value
-                        }
+                    // ✂️ 这里关于 Artwork 的代码全部删掉！
                     default:
                         break
                     }
                 }
                 
-                // --- B. 单独处理歌词 (直接匹配原始字符串) ---
-                // item.key 是一个对象，我们先把它强转成 String
+                // 歌词还要留着
                 if let keyString = item.key as? String {
-                    
-                    // "USLT" = MP3 的歌词标签 (Unsynchronized Lyrics)
-                    // "©lyr" = m4a/iTunes 的歌词标签
-                    if keyString == "USLT" || keyString == "©lyr" {
+                    if keyString == "USLT" || keyString == "©lyr" || keyString == "SYLT" {
                         lyrics = try? await item.load(.stringValue)
                     }
                 }
             }
         } catch {
-            print("解析失败: \(url.lastPathComponent)")
+            print("⚠️ 解析出错: \(url.lastPathComponent)")
         }
         
         return Song(
             url: url,
             title: title,
             artist: artist,
-            artworkData: artworkData,
+            // artworkData 参数已经没了，不用传
             lrcURL: nil,
-            embeddedLyrics: lyrics // 填入挖出来的歌词
+            embeddedLyrics: lyrics
         )
     }
 }
