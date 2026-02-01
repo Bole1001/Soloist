@@ -6,21 +6,19 @@
 //
 
 import Foundation
-import AVFoundation
 import Combine
 import MediaPlayer
 
-// ✨ 修复：根据平台引入正确的 UI 库
 #if os(macOS)
 import AppKit
 #else
 import UIKit
 #endif
 
-class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
+class AudioPlayerService: NSObject, ObservableObject {
     static let shared = AudioPlayerService()
     
-    private var player: AVAudioPlayer?
+    private let engine = AudioEngine()
     
     // MARK: - 状态发布
     @Published var currentSong: Song?
@@ -35,27 +33,27 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
         didSet {
             playlist.isShuffleMode = isShuffleMode
             if isShuffleMode {
-                // 这里也要改：传入当前歌曲 currentSong
                 playlist.reshuffle(keepCurrentAtTop: currentSong)
             }
         }
     }
     
     // 循环模式开关
-    @Published var isLoopMode: Bool = true
+    @Published var isLoopMode: Bool = true {
+        didSet {
+            playlist.isLoopMode = isLoopMode
+        }
+    }
     
     // 播放队列
     private let playlist = PlaylistManager()
-    
     private let lyricsManager = LyricsManager()
-    
-    // 定时器
-    private var timer: Timer?
     
     // MARK: - 初始化
     override init() {
         super.init()
         setupAudioSession()
+        setupEngineCallbacks()
         setupRemoteCommandCenter()
     }
     
@@ -70,7 +68,31 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
         #endif
     }
     
-    // MARK: - 系统媒体控制 (键盘/Touch Bar/控制中心)
+    private func setupEngineCallbacks() {
+        // 进度更新
+        engine.onTimeUpdate = { [weak self] time in
+            DispatchQueue.main.async {
+                self?.currentTime = time
+                self?.updateLyrics() // 驱动歌词更新
+            }
+        }
+        
+        // 播放结束 -> 自动下一首
+        engine.onPlaybackFinished = { [weak self] in
+            DispatchQueue.main.async {
+                self?.next()
+            }
+        }
+        
+        // 时长更新
+        engine.onDurationUpdate = { [weak self] dur in
+            DispatchQueue.main.async {
+                self?.duration = dur
+            }
+        }
+    }
+    
+    // MARK: - 系统媒体控制
     private func setupRemoteCommandCenter() {
         let center = MPRemoteCommandCenter.shared()
         
@@ -96,7 +118,10 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
         
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
             if let event = event as? MPChangePlaybackPositionCommandEvent {
-                self?.player?.currentTime = event.positionTime
+                
+                self?.engine.seek(to: event.positionTime)
+                
+                // 这里手动更一下状态，UI 响应更快
                 self?.currentTime = event.positionTime
                 self?.updateNowPlayingInfo()
                 return .success
@@ -107,60 +132,45 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     
     // MARK: - 更新系统播放信息
     private func updateNowPlayingInfo() {
-            guard let song = currentSong else {
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-                return
-            }
-            
-            // --- 1. 先设置基础文字信息 (同步执行，立即生效) ---
-            // 这样用户切歌时，控制中心的名字会瞬间变化，不会有延迟
-            var info: [String: Any] = [
-                MPMediaItemPropertyTitle: song.title,
-                MPMediaItemPropertyArtist: song.artist,
-                MPMediaItemPropertyPlaybackDuration: duration,
-                MPNowPlayingInfoPropertyElapsedPlaybackTime: player?.currentTime ?? 0,
-                MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
-            ]
-            
-            // 先把文字推送到系统
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-            
-            // --- 2. 后台异步加载封面 ---
-            // 这就是我们“去内存化”的核心：用的时候再去硬盘读
-            Task {
-                // 调用我们新写的工具类
-                if let data = await ArtworkLoader.loadArtwork(for: song) {
-                    
-                    #if os(macOS)
-                    if let nsImage = NSImage(data: data) {
-                        // 创建系统需要的 Artwork 对象
-                        let artwork = MPMediaItemArtwork(boundsSize: nsImage.size) { _ in return nsImage }
-                        
-                        // 取出当前的信息，把图片塞进去
-                        var currentInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? info
-                        currentInfo[MPMediaItemPropertyArtwork] = artwork
-                        
-                        // 再次更新 (这次带图了)
-                        MPNowPlayingInfoCenter.default().nowPlayingInfo = currentInfo
-                    }
-                    #else
-                    // iOS 逻辑
-                    if let uiImage = UIImage(data: data) {
-                        let artwork = MPMediaItemArtwork(boundsSize: uiImage.size) { _ in return uiImage }
-                        
-                        var currentInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? info
-                        currentInfo[MPMediaItemPropertyArtwork] = artwork
-                        
-                        MPNowPlayingInfoCenter.default().nowPlayingInfo = currentInfo
-                    }
-                    #endif
+        guard let song = currentSong else {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            return
+        }
+        
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: song.title,
+            MPMediaItemPropertyArtist: song.artist,
+            MPMediaItemPropertyPlaybackDuration: duration,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: engine.currentTime,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
+        ]
+        
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        
+        // 后台异步加载封面 (保持不变)
+        Task {
+            if let data = await ArtworkLoader.loadArtwork(for: song) {
+                #if os(macOS)
+                if let nsImage = NSImage(data: data) {
+                    let artwork = MPMediaItemArtwork(boundsSize: nsImage.size) { _ in return nsImage }
+                    var currentInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? info
+                    currentInfo[MPMediaItemPropertyArtwork] = artwork
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = currentInfo
                 }
+                #else
+                if let uiImage = UIImage(data: data) {
+                    let artwork = MPMediaItemArtwork(boundsSize: uiImage.size) { _ in return uiImage }
+                    var currentInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? info
+                    currentInfo[MPMediaItemPropertyArtwork] = artwork
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = currentInfo
+                }
+                #endif
             }
         }
+    }
     
-    // MARK: - 歌词加载逻辑 (三级降级策略)
+    // MARK: - 歌词逻辑
     private func updateLyrics() {
-        // 调用助手查找当前行
         if let lineText = lyricsManager.findCurrentLine(in: lyrics, at: currentTime) {
             if currentLyric != lineText {
                 currentLyric = lineText
@@ -168,18 +178,17 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
     }
 
-    // 同时修改 loadLyricsForCurrentSong，接入新的 LyricsManager 回调
     private func loadLyricsForCurrentSong() {
         guard let song = currentSong else { return }
         self.lyrics = []
         self.currentLyric = song.title
         
-        lyricsManager.fetchLyrics(for: song, duration: player?.duration ?? 0) { [weak self] parsed, updatedSong in
+        lyricsManager.fetchLyrics(for: song, duration: duration) { [weak self] parsed, updatedSong in
             DispatchQueue.main.async {
                 guard let self = self, self.currentSong?.id == song.id else { return }
                 self.lyrics = parsed
                 if let newSong = updatedSong {
-                    self.currentSong = newSong // 如果存了新歌词，更新 Song 状态
+                    self.currentSong = newSong
                 }
             }
         }
@@ -187,25 +196,27 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     
     // MARK: - 公开控制方法
     func play(song: Song, playlist list: [Song]) {
-            // 让助手更新列表
-            self.playlist.updateList(list)
-            if isShuffleMode && playlist.shuffledPlaylist.isEmpty {
-                playlist.reshuffle(keepCurrentAtTop: song)
-            }
-            
-            self.currentSong = song
-            startPlayback(url: song.url)
-            
-            // 延迟加载歌词逻辑保持不变...
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                self.loadLyricsForCurrentSong()
-            }
+        self.playlist.updateList(list)
+        if isShuffleMode && playlist.shuffledPlaylist.isEmpty {
+            playlist.reshuffle(keepCurrentAtTop: song)
         }
+        
+        self.currentSong = song
+        
+        engine.play(url: song.url)
+        
+        // 更新 Service 状态
+        isPlaying = true
+        
+        // 延迟加载歌词
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            self.loadLyricsForCurrentSong()
+        }
+        updateNowPlayingInfo()
+    }
     
     func togglePlayPause() {
-        guard let player = player else { return }
-        
-        if player.isPlaying {
+        if engine.isPlaying {
             pause()
         } else {
             resume()
@@ -221,25 +232,22 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
     
     func pause() {
-        player?.pause()
+        engine.pause()
         isPlaying = false
-        timer?.invalidate()
         updateNowPlayingInfo()
     }
     
     func resume() {
-        player?.play()
+        engine.resume()
         isPlaying = true
-        startTimer()
         updateNowPlayingInfo()
     }
     
     func stop() {
-        player?.stop()
-        player = nil
+        engine.stop()
+        
         currentSong = nil
         isPlaying = false
-        timer?.invalidate()
         currentLyric = ""
         currentTime = 0
         lyrics = []
@@ -248,68 +256,22 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     
     // MARK: - 切歌逻辑
     func next() {
-            if let nextSong = playlist.getNextSong(after: currentSong) {
-                play(song: nextSong, playlist: playlist.originalPlaylist)
-            } else {
-                stop()
-            }
-        }
-        
-        func previous() {
-            // 如果当前播放超过3秒，点上一首通常是重播当前
-            if (player?.currentTime ?? 0) > 3.0 {
-                player?.currentTime = 0
-                updateNowPlayingInfo()
-                return
-            }
-            
-            if let prevSong = playlist.getPreviousSong(before: currentSong) {
-                play(song: prevSong, playlist: playlist.originalPlaylist)
-            }
-        }
-    
-    // MARK: - 内部逻辑
-    
-    private func startPlayback(url: URL) {
-        do {
-            player = try AVAudioPlayer(contentsOf: url)
-            player?.delegate = self
-            player?.prepareToPlay()
-            player?.play()
-            
-            isPlaying = true
-            duration = player?.duration ?? 0
-            
-            if let lrcUrl = currentSong?.lrcURL {
-                self.lyrics = LRCParser.parse(url: lrcUrl)
-            } else if let embedded = currentSong?.embeddedLyrics, !embedded.isEmpty {
-                self.lyrics = LRCParser.parse(content: embedded)
-            } else {
-                self.lyrics = []
-                self.currentLyric = ""
-            }
-            
-            startTimer()
-            updateNowPlayingInfo()
-            
-        } catch {
-            print("播放出错: \(error)")
+        if let nextSong = playlist.getNextSong(after: currentSong) {
+            play(song: nextSong, playlist: playlist.originalPlaylist)
+        } else {
             stop()
         }
     }
     
-    private func startTimer() {
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            guard let self = self, let player = self.player else { return }
-            self.currentTime = player.currentTime
-            self.updateLyrics()
+    func previous() {
+        if engine.currentTime > 3.0 {
+            engine.seek(to: 0)
+            updateNowPlayingInfo()
+            return
         }
-    }
-    
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        if flag {
-            next()
+        
+        if let prevSong = playlist.getPreviousSong(before: currentSong) {
+            play(song: prevSong, playlist: playlist.originalPlaylist)
         }
     }
 }
