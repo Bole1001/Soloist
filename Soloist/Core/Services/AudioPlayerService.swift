@@ -47,6 +47,8 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     // 播放队列
     private let playlist = PlaylistManager()
     
+    private let lyricsManager = LyricsManager()
+    
     // 定时器
     private var timer: Timer?
     
@@ -157,135 +159,31 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
     
     // MARK: - 歌词加载逻辑 (三级降级策略)
-        private func loadLyricsForCurrentSong() {
-            guard let song = currentSong else { return }
-            
-            print("📝 [AudioPlayer] 开始加载歌词: \(song.title)")
-            
-            // 先清空旧歌词，避免显示上一首的
-            self.lyrics = []
-            self.currentLyric = song.title
-            
-            // ————————————————
-            // 🟢 策略 1: 本地 .lrc 文件 (最高优先级)
-            // ————————————————
-            if let lrcURL = song.lrcURL {
-                let parsed = LRCParser.parse(url: lrcURL)
-                if !parsed.isEmpty {
-                    print("📂 命中本地 LRC 文件")
-                    self.lyrics = parsed
-                    return
-                }
-            }
-            
-            // ————————————————
-            // 🟡 策略 2: 内嵌歌词 (ID3 Tags)
-            // ————————————————
-            if let embedded = song.embeddedLyrics, !embedded.isEmpty {
-                let parsed = LRCParser.parse(content: embedded)
-                if !parsed.isEmpty {
-                    print("💿 命中 MP3 内嵌歌词")
-                    self.lyrics = parsed
-                    return
-                }
-            }
-            
-            // ————————————————
-            // 🔴 策略 3: 联网搜索 (LRCLIB)
-            // ————————————————
-            
-            // 获取时长 (从 AVPlayer 获取，提高搜索准确度)
-            let duration = self.player?.duration ?? 0
-            
-            LyricsFetcher.search(
-                title: song.title,
-                artist: song.artist,
-                album: "", // 专辑名可选，先留空
-                duration: duration
-            ) { [weak self] lyricString in
-                
-                // 网络回调在后台线程，必须切回主线程更新 UI
-                DispatchQueue.main.async {
-                    // ✨✨✨ 关键修复：显式转换类型，解决 "NSObject has no member currentSong" 报错 ✨✨✨
-                    guard let self = self else { return }
-                    
-                    // 确保还没切歌 (防止网速慢，歌都切走了歌词才回来)
-                    if self.currentSong?.id == song.id {
-                        
-                        if let content = lyricString {
-                            // 1. 解析下载到的字符串
-                            let parsed = LRCParser.parse(content: content)
-                            
-                            if !parsed.isEmpty {
-                                self.lyrics = parsed
-                                print("✅ 网络歌词加载成功，准备保存...")
-                                
-                                // 2. ✨ 保存到本地硬盘 (下次就不用搜了)
-                                self.saveLrcFile(content: content, for: song)
-                            } else {
-                                print("❌ 虽然下载了内容，但解析为空 (可能格式不对)")
-                                self.lyrics = []
-                            }
-                        } else {
-                            print("❌ 所有策略均未找到歌词")
-                            self.lyrics = [] // 真的没有，保持为空
-                        }
-                    }
-                }
+    private func updateLyrics() {
+        // 调用助手查找当前行
+        if let lineText = lyricsManager.findCurrentLine(in: lyrics, at: currentTime) {
+            if currentLyric != lineText {
+                currentLyric = lineText
             }
         }
+    }
 
-    // MARK: - 文件操作
+    // 同时修改 loadLyricsForCurrentSong，接入新的 LyricsManager 回调
+    private func loadLyricsForCurrentSong() {
+        guard let song = currentSong else { return }
+        self.lyrics = []
+        self.currentLyric = song.title
         
-    /// 将歌词保存到当前目录下的 Lyrics 文件夹中
-        private func saveLrcFile(content: String, for song: Song) {
-            let fileManager = FileManager.default
-            
-            // 1. 获取 MP3 所在的父目录
-            let parentDirectory = song.url.deletingLastPathComponent()
-            
-            // 2. 构造 Lyrics 文件夹路径
-            let lyricsFolderURL = parentDirectory.appendingPathComponent("Lyrics", isDirectory: true)
-            
-            // 3. 构造最终的文件名 (例如 七里香.lrc)
-            let fileName = song.url.deletingPathExtension().lastPathComponent + ".lrc"
-            let lrcURL = lyricsFolderURL.appendingPathComponent(fileName)
-            
-            do {
-                // 4. 检查 Lyrics 文件夹是否存在，不存在则创建
-                if !fileManager.fileExists(atPath: lyricsFolderURL.path) {
-                    try fileManager.createDirectory(at: lyricsFolderURL, withIntermediateDirectories: true, attributes: nil)
-                    print("📂 创建歌词文件夹: \(lyricsFolderURL.lastPathComponent)")
+        lyricsManager.fetchLyrics(for: song, duration: player?.duration ?? 0) { [weak self] parsed, updatedSong in
+            DispatchQueue.main.async {
+                guard let self = self, self.currentSong?.id == song.id else { return }
+                self.lyrics = parsed
+                if let newSong = updatedSong {
+                    self.currentSong = newSong // 如果存了新歌词，更新 Song 状态
                 }
-                
-                // 5. 写入文件
-                try content.write(to: lrcURL, atomically: true, encoding: .utf8)
-                print("💾 [AudioPlayer] 歌词已归档保存: \(lrcURL.path)")
-                
-                // 6. 更新内存中的 Song 对象
-                // 这样不用重启 App，策略 1 (本地文件) 也能直接找到这个新路径
-                DispatchQueue.main.async {
-                    if let current = self.currentSong, current.id == song.id {
-                        
-                        // ✨ 修复：删除了 artworkData 参数
-                        let updatedSong = Song(
-                            id: current.id,
-                            url: current.url,
-                            title: current.title,
-                            artist: current.artist,
-                            // ❌ artworkData: current.artworkData, <-- 删掉这行
-                            lrcURL: lrcURL, // 👈 填入新生成的歌词路径
-                            embeddedLyrics: current.embeddedLyrics
-                        )
-                        
-                        self.currentSong = updatedSong
-                    }
-                }
-                
-            } catch {
-                print("⚠️ 保存歌词失败 (可能是没有文件夹创建权限): \(error)")
             }
         }
+    }
     
     // MARK: - 公开控制方法
     func play(song: Song, playlist list: [Song]) {
@@ -406,15 +304,6 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
             guard let self = self, let player = self.player else { return }
             self.currentTime = player.currentTime
             self.updateLyrics()
-        }
-    }
-    
-    private func updateLyrics() {
-        guard !lyrics.isEmpty else { return }
-        if let line = lyrics.last(where: { $0.startTime <= currentTime }) {
-            if currentLyric != line.text {
-                currentLyric = line.text
-            }
         }
     }
     
