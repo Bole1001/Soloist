@@ -33,8 +33,10 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     // 随机模式开关
     @Published var isShuffleMode: Bool = true {
         didSet {
+            playlist.isShuffleMode = isShuffleMode
             if isShuffleMode {
-                shufflePlaylist(keepCurrentAtTop: true)
+                // 这里也要改：传入当前歌曲 currentSong
+                playlist.reshuffle(keepCurrentAtTop: currentSong)
             }
         }
     }
@@ -43,8 +45,7 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published var isLoopMode: Bool = true
     
     // 播放队列
-    private var originalPlaylist: [Song] = []
-    private var shuffledPlaylist: [Song] = []
+    private let playlist = PlaylistManager()
     
     // 定时器
     private var timer: Timer?
@@ -287,20 +288,17 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
     
     // MARK: - 公开控制方法
-    
-    func play(song: Song, playlist: [Song]) {
-            self.originalPlaylist = playlist
-            self.currentSong = song
-            
-            if isShuffleMode {
-                shufflePlaylist(keepCurrentAtTop: true)
+    func play(song: Song, playlist list: [Song]) {
+            // 让助手更新列表
+            self.playlist.updateList(list)
+            if isShuffleMode && playlist.shuffledPlaylist.isEmpty {
+                playlist.reshuffle(keepCurrentAtTop: song)
             }
             
-            // 启动播放 (你原有的逻辑)
+            self.currentSong = song
             startPlayback(url: song.url)
             
-            // ✨✨✨ 新增：启动歌词加载流程 ✨✨✨
-            // 延迟 0.1 秒执行，确保 player 已经初始化并获取到了时长
+            // 延迟加载歌词逻辑保持不变...
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 self.loadLyricsForCurrentSong()
             }
@@ -351,74 +349,28 @@ class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
     
     // MARK: - 切歌逻辑
-    
     func next() {
-        guard let current = currentSong else { return }
-        
-        let activeList = isShuffleMode ? shuffledPlaylist : originalPlaylist
-        guard let index = activeList.firstIndex(where: { $0.id == current.id }) else { return }
-        
-        var nextIndex = index + 1
-        
-        if nextIndex >= activeList.count {
-            if isLoopMode {
-                if isShuffleMode {
-                    reshuffleForNextRound()
-                    nextIndex = 0
-                } else {
-                    nextIndex = 0
-                }
+            if let nextSong = playlist.getNextSong(after: currentSong) {
+                play(song: nextSong, playlist: playlist.originalPlaylist)
             } else {
                 stop()
-                return
             }
         }
         
-        let finalList = isShuffleMode ? shuffledPlaylist : originalPlaylist
-        let nextSong = finalList[nextIndex]
-        currentSong = nextSong
-        startPlayback(url: nextSong.url)
-        loadLyricsForCurrentSong()
-    }
-    
-    func previous() {
-        guard let current = currentSong else { return }
-        
-        let activeList = isShuffleMode ? shuffledPlaylist : originalPlaylist
-        guard let index = activeList.firstIndex(where: { $0.id == current.id }) else { return }
-        
-        var prevIndex = index - 1
-        
-        if prevIndex < 0 {
-            if isLoopMode {
-                prevIndex = activeList.count - 1
-            } else {
+        func previous() {
+            // 如果当前播放超过3秒，点上一首通常是重播当前
+            if (player?.currentTime ?? 0) > 3.0 {
+                player?.currentTime = 0
+                updateNowPlayingInfo()
                 return
             }
+            
+            if let prevSong = playlist.getPreviousSong(before: currentSong) {
+                play(song: prevSong, playlist: playlist.originalPlaylist)
+            }
         }
-        
-        let prevSong = activeList[prevIndex]
-        currentSong = prevSong
-        startPlayback(url: prevSong.url)
-        loadLyricsForCurrentSong()
-    }
     
     // MARK: - 内部逻辑
-    
-    private func shufflePlaylist(keepCurrentAtTop: Bool) {
-        var shuffled = originalPlaylist.shuffled()
-        if keepCurrentAtTop, let current = currentSong, let index = shuffled.firstIndex(where: { $0.id == current.id }) {
-            shuffled.remove(at: index)
-            shuffled.insert(current, at: 0)
-        }
-        self.shuffledPlaylist = shuffled
-        print("随机列表生成")
-    }
-    
-    private func reshuffleForNextRound() {
-        self.shuffledPlaylist = originalPlaylist.shuffled()
-        print("新一轮循环，已重新彻底洗牌")
-    }
     
     private func startPlayback(url: URL) {
         do {
