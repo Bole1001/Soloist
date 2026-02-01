@@ -13,29 +13,16 @@ struct PlayerControlBar: View {
     // 接收父视图传来的开关变量
     @Binding var showLyrics: Bool
     
-    // ✨ 新增：用于存储异步加载的封面图片数据
-    @State private var currentArtwork: Data? = nil
+    // ❌ 删除了：@State private var currentArtwork
+    // ✅ 原因：这个状态现在由 ArtworkView 内部自己管理，不需要外部操心
     
     var body: some View {
         HStack(spacing: 20) {
             
             // --- 1. 左侧：封面与歌名 ---
             HStack {
-                // ✨ 修改点：不再读 song.artworkData，而是读本地 State 里的 currentArtwork
-                if let data = currentArtwork,
-                   let nsImage = NSImage(data: data) {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 48, height: 48)
-                        .cornerRadius(6)
-                } else {
-                    // 占位图
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.gray.opacity(0.3))
-                        .frame(width: 48, height: 48)
-                        .overlay(Image(systemName: "music.note").foregroundColor(.gray))
-                }
+                // ✨ 复用 Shared 组件：封面
+                ArtworkView(song: playerService.currentSong, size: 48)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(playerService.currentSong?.title ?? "未播放")
@@ -59,7 +46,7 @@ struct PlayerControlBar: View {
             // --- 2. 中间：歌词 + 控制按钮 ---
             VStack(spacing: 6) {
                 HStack(spacing: 24) {
-                    // 1. 随机播放
+                    // 1. 随机播放 (非核心，保留在此)
                     Button(action: { playerService.toggleShuffle() }) {
                         Image(systemName: "shuffle")
                             .font(.system(size: 15))
@@ -67,26 +54,11 @@ struct PlayerControlBar: View {
                     }
                     .buttonStyle(.plain)
                     
-                    // 2. 上一首
-                    Button(action: { playerService.previous() }) {
-                        Image(systemName: "backward.fill").font(.title3)
-                    }
-                    .buttonStyle(.plain)
+                    // ✨ 复用 Shared 组件：核心控制 (上/停/下)
+                    // 这里的 size: 38 会自动按比例调整三个按钮的大小
+                    PlaybackControls(playerService: playerService, size: 38)
                     
-                    // 3. 播放/暂停
-                    Button(action: { playerService.togglePlayPause() }) {
-                        Image(systemName: playerService.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                            .font(.system(size: 38))
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // 4. 下一首
-                    Button(action: { playerService.next() }) {
-                        Image(systemName: "forward.fill").font(.title3)
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // 5. 循环播放
+                    // 3. 循环播放 (非核心，保留在此)
                     Button(action: { playerService.toggleLoop() }) {
                         Image(systemName: "repeat")
                             .font(.system(size: 15))
@@ -94,7 +66,7 @@ struct PlayerControlBar: View {
                     }
                     .buttonStyle(.plain)
                     
-                    // 6. 桌面歌词开关
+                    // 4. 桌面歌词 (Mac 独有，必须保留在此)
                     Button(action: {
                         DesktopLyricsController.shared.toggle()
                     }) {
@@ -121,17 +93,8 @@ struct PlayerControlBar: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        // ✨✨✨ 核心逻辑：监听歌曲 ID 变化，异步加载图片 ✨✨✨
-        // .task(id:) 是 SwiftUI 专门处理异步刷新的神器，比 .onChange 更好用
-        .task(id: playerService.currentSong?.id) {
-            if let song = playerService.currentSong {
-                // 有歌 -> 去硬盘挖图片 (不卡顿)
-                currentArtwork = await ArtworkLoader.loadArtwork(for: song)
-            } else {
-                // 没歌 -> 清空图片
-                currentArtwork = nil
-            }
-        }
+        // ❌ 删除了：.task(id:)
+        // ✅ 原因：ArtworkView 内部已经有了 .task，这里再写就是重复加载
     }
     
     func formatTime(_ time: TimeInterval) -> String {
