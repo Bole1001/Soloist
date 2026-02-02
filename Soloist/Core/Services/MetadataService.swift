@@ -8,8 +8,21 @@
 import Foundation
 import AVFoundation
 
+/// 元数据解析服务 (MetadataService)
+///
+/// **职责**: 负责从音频文件中提取轻量级的元数据（标题、艺术家、内嵌歌词）。
+/// **层级**: Core Layer (Service)。
+///
+/// **设计原则**:
+/// 该服务**故意不加载**封面图片 (Artwork)。
+/// 因为在扫描数千首歌曲时，加载图片会导致极其严重的内存峰值和 I/O 阻塞。
+/// 图片加载应推迟到 UI 显示阶段由 `ArtworkLoader` 按需处理。
 struct MetadataService {
     
+    /// 解析音频文件的元数据
+    ///
+    /// - Parameter url: 音频文件的本地 URL
+    /// - Returns: 包含基础信息的 Song 对象（不含封面数据）
     static func parse(url: URL) async -> Song {
         let asset = AVURLAsset(url: url)
         
@@ -17,40 +30,45 @@ struct MetadataService {
         var artist: String?
         var lyrics: String?
         
-        // 1. 只加载必要的文字信息，不需要 .commonKeyArtwork
         do {
+            // 异步加载所有元数据项
             let metadata = try await asset.load(.metadata)
             
             for item in metadata {
+                // 1. 处理通用键值 (Common Keys)
+                // AVFoundation 会自动适配 ID3v2 和 iTunes Atom 格式
                 if let commonKey = item.commonKey {
                     switch commonKey {
                     case .commonKeyTitle:
                         title = try? await item.load(.stringValue)
                     case .commonKeyArtist:
                         artist = try? await item.load(.stringValue)
-                    // ✂️ 这里关于 Artwork 的代码全部删掉！
                     default:
                         break
                     }
                 }
                 
-                // 歌词还要留着
+                // 2. 处理内嵌歌词
+                // 需要手动检查特定的原始键值 (Raw Keys)
                 if let keyString = item.key as? String {
+                    // USLT: ID3v2 非同步歌词 (Unsynchronized Lyrics)
+                    // SYLT: ID3v2 同步歌词 (Synchronized Lyrics)
+                    // ©lyr: iTunes/M4A 歌词原子
                     if keyString == "USLT" || keyString == "©lyr" || keyString == "SYLT" {
                         lyrics = try? await item.load(.stringValue)
                     }
                 }
             }
         } catch {
-            print("⚠️ 解析出错: \(url.lastPathComponent)")
+            print("⚠️ [MetadataService] 解析元数据失败: \(url.lastPathComponent) - \(error)")
         }
         
+        // 返回轻量级模型
         return Song(
             url: url,
             title: title,
             artist: artist,
-            // artworkData 参数已经没了，不用传
-            lrcURL: nil,
+            lrcURL: nil,      // 此时尚未进行外部 LRC 文件匹配，留空
             embeddedLyrics: lyrics
         )
     }

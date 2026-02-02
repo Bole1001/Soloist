@@ -7,62 +7,82 @@
 
 import AppKit
 import SwiftUI
+// 只有开启了私有功能，才需要引入 ObjC Runtime
+#if PRIVATE_TOUCHBAR
 import ObjectiveC
+#endif
 
-class TouchBarManager: NSObject, NSTouchBarDelegate {
+/// Touch Bar 管理器
+///
+/// 使用编译标记 `PRIVATE_TOUCHBAR` 控制。
+/// - 开启时：使用私有 API 实现系统级后台常驻。
+/// - 关闭时：功能被禁用，调用无效果，符合 App Store 审核标准。
+class TouchBarManager: NSObject {
     
-    // 单例
     static let shared = TouchBarManager()
     
-    // 记录当前的 Touch Bar (即使它被系统关了，我们留着也没关系，不占性能)
+    /// 对外暴露的只读属性，用于 UI 层判断是否显示相关按钮
+    #if PRIVATE_TOUCHBAR
+    let isFeatureAvailable = true
+    #else
+    let isFeatureAvailable = false
+    #endif
+    
+    // MARK: - 内部状态 (仅在开启时存在)
+    #if PRIVATE_TOUCHBAR
     private var systemTouchBar: NSTouchBar?
+    #endif
+
+    // MARK: - 公开调用接口 (API 必须保持一致)
     
-    // MARK: - 核心逻辑修改
-    
-    // 现在的逻辑：不管原来是开是关，只要你点这个，我就强制重开！
-    // 这样就完美解决了“状态不同步”导致需要点两下的问题。
+    /// 切换显示状态
     func toggle() {
+        #if PRIVATE_TOUCHBAR
         present()
+        #else
+        print("🚫 [TouchBarManager] 当前版本未启用私有 TouchBar 功能")
+        #endif
     }
     
-    // 强制显示
+    /// 强制显示
     func present() {
-        // 1. 先把旧的清理掉 (无论它现在是否显示)
-        // 这步是关键：防止代码以为开着，实际上已经关了
+        #if PRIVATE_TOUCHBAR
         dismiss()
-        
-        // 2. 创建一个新的
         let touchBar = NSTouchBar()
         touchBar.delegate = self
         touchBar.defaultItemIdentifiers = [.lyricsItem]
         
-        // 3. 申请系统模态显示
-        // 0 代表 .appControl (只覆盖中间部分，保留系统功能键)
+        // 调用私有 API
         NSTouchBar.presentSystemModal(touchBar: touchBar, placement: 0)
         
         self.systemTouchBar = touchBar
-        print("🚀 Touch Bar 已强制启动")
+        print("🚀 [TouchBarManager] Touch Bar 已强制启动 (Private Mode)")
+        #endif
     }
     
-    // 清理逻辑
+    /// 销毁隐藏
     func dismiss() {
-        // 如果手里有旧的引用，先关掉它
+        #if PRIVATE_TOUCHBAR
         if let touchBar = systemTouchBar {
             NSTouchBar.dismissSystemModal(touchBar: touchBar)
             systemTouchBar = nil
         }
-        
-        // 双重保险：发一个空指令给系统，确保真的退出了
-        // 这样可以保证下次 present 绝对是干净的
+        // 双重保险清理
         let dummy = NSTouchBar()
         NSTouchBar.dismissSystemModal(touchBar: dummy)
+        #endif
     }
-    
-    // MARK: - NSTouchBarDelegate
+}
+
+// MARK: - 扩展与代理 (全部关进笼子)
+
+#if PRIVATE_TOUCHBAR
+
+// 1. 代理实现
+extension TouchBarManager: NSTouchBarDelegate {
     func touchBar(_ touchBar: NSTouchBar, makeItemForIdentifier identifier: NSTouchBarItem.Identifier) -> NSTouchBarItem? {
         if identifier == .lyricsItem {
             let item = NSCustomTouchBarItem(identifier: identifier)
-            // 纯净版：没有自定义关闭按钮，直接用系统自带的 X
             item.view = NSHostingView(rootView: TouchBarLyricsView())
             return item
         }
@@ -70,14 +90,13 @@ class TouchBarManager: NSObject, NSTouchBarDelegate {
     }
 }
 
-// 注册 ID
+// 2. 标识符注册
 extension NSTouchBarItem.Identifier {
     static let lyricsItem = NSTouchBarItem.Identifier("com.soloist.lyricsItem")
 }
 
-// MARK: - 🪄 黑魔法 (适配你的 macOS)
+// 3. 私有 API 黑魔法
 extension NSTouchBar {
-    
     static private func ensureDFRFrameworkLoaded() {
         if let bundle = Bundle(path: "/System/Library/PrivateFrameworks/DFRFoundation.framework") {
             if !bundle.isLoaded { bundle.load() }
@@ -87,7 +106,6 @@ extension NSTouchBar {
     static func presentSystemModal(touchBar: NSTouchBar, placement: Int64) {
         ensureDFRFrameworkLoaded()
         let selector = Selector(("presentSystemModalTouchBar:placement:systemTrayItemIdentifier:"))
-        
         if responds(to: selector) {
             let imp = method(for: selector)
             typealias FuncType = @convention(c) (AnyClass, Selector, NSTouchBar, Int64, String?) -> Void
@@ -98,7 +116,6 @@ extension NSTouchBar {
     
     static func dismissSystemModal(touchBar: NSTouchBar) {
         let selector = Selector(("dismissSystemModalTouchBar:"))
-        
         if responds(to: selector) {
             let imp = method(for: selector)
             typealias FuncType = @convention(c) (AnyClass, Selector, NSTouchBar) -> Void
@@ -108,14 +125,13 @@ extension NSTouchBar {
     }
 }
 
-// MARK: - SwiftUI 视图 (纯净歌词版)
+// 4. SwiftUI 视图
 struct TouchBarLyricsView: View {
     @StateObject private var playerService = AudioPlayerService.shared
     
     var body: some View {
         ZStack {
             Color.black
-            
             Text(playerService.currentLyric.isEmpty ? (playerService.currentSong?.title ?? "Soloist") : playerService.currentLyric)
                 .font(.system(size: 16, weight: .medium))
                 .foregroundColor(.white)
@@ -127,3 +143,5 @@ struct TouchBarLyricsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
+
+#endif

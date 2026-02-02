@@ -7,27 +7,32 @@
 
 import SwiftUI
 
+/// 底部播放控制条 (PlayerControlBar)
 struct PlayerControlBar: View {
-    @ObservedObject var playerService: AudioPlayerService
     
-    // 接收父视图传来的开关变量
+    // MARK: - Dependencies
+    @ObservedObject var playerService: AudioPlayerService
     @Binding var showLyrics: Bool
     
-    // ❌ 删除了：@State private var currentArtwork
-    // ✅ 原因：这个状态现在由 ArtworkView 内部自己管理，不需要外部操心
+    // MARK: - Local State for Slider
+    /// 是否正在拖拽进度条 (用于解决“拖拽时被定时器重置”的冲突问题)
+    @State private var isDragging: Bool = false
+    /// 拖拽过程中的临时进度值
+    @State private var dragProgress: Double = 0.0
     
+    // MARK: - Body
     var body: some View {
         HStack(spacing: 20) {
             
-            // --- 1. 左侧：封面与歌名 ---
+            // MARK: - 1. 左侧：歌曲信息
             HStack {
-                // ✨ 复用 Shared 组件：封面
                 ArtworkView(song: playerService.currentSong, size: 48)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(playerService.currentSong?.title ?? "未播放")
                         .font(.headline)
                         .lineLimit(1)
+                    
                     Text(playerService.currentSong?.artist ?? "-")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -36,68 +41,117 @@ struct PlayerControlBar: View {
                 .frame(maxWidth: 150, alignment: .leading)
             }
             .contentShape(Rectangle())
-            .onTapGesture {
-                showLyrics.toggle()
-            }
+            .onTapGesture { showLyrics.toggle() }
             .help("点击查看完整歌词")
             
             Spacer()
             
-            // --- 2. 中间：歌词 + 控制按钮 ---
-            VStack(spacing: 6) {
+            // MARK: - 2. 中间：控制按钮 + 进度条
+            VStack(spacing: 8) {
+                
+                // A. 进度条区域
+                if playerService.duration > 0 {
+                    HStack(spacing: 8) {
+                        // 当前时间 (拖拽时显示拖拽时间，否则显示播放时间)
+                        Text(formatTime(isDragging ? dragProgress : playerService.currentTime))
+                            .font(.caption2)
+                            .monospacedDigit()
+                            .foregroundColor(.secondary)
+                            .frame(width: 40, alignment: .trailing)
+                        
+                        // 进度滑块
+                        Slider(
+                            value: Binding(
+                                get: {
+                                    // 如果正在拖拽，显示临时值；否则显示真实播放进度
+                                    isDragging ? dragProgress : playerService.currentTime
+                                },
+                                set: { newValue in
+                                    // 拖拽过程中只更新 UI，不发送 seek 指令
+                                    isDragging = true
+                                    dragProgress = newValue
+                                }
+                            ),
+                            in: 0...playerService.duration,
+                            onEditingChanged: { editing in
+                                isDragging = editing
+                                if !editing {
+                                    // 发送 seek 指令给后端
+                                    playerService.seek(to: dragProgress)
+                                }
+                            }
+                        )
+                        .controlSize(.small) // 使用小尺寸滑块，更精致
+                        
+                        // 总时长
+                        Text(formatTime(playerService.duration))
+                            .font(.caption2)
+                            .monospacedDigit()
+                            .foregroundColor(.secondary)
+                            .frame(width: 40, alignment: .leading)
+                    }
+                } else {
+                    // 如果没有时长数据 (未播放)，显示占位条
+                    ProgressView(value: 0)
+                        .progressViewStyle(.linear)
+                        .frame(height: 6)
+                        .opacity(0.5)
+                }
+                
+                // B. 按钮区域
                 HStack(spacing: 24) {
-                    // 1. 随机播放 (非核心，保留在此)
                     Button(action: { playerService.toggleShuffle() }) {
                         Image(systemName: "shuffle")
-                            .font(.system(size: 15))
+                            .font(.system(size: 14))
                             .foregroundColor(playerService.isShuffleMode ? .blue : .secondary.opacity(0.6))
                     }
                     .buttonStyle(.plain)
                     
-                    // ✨ 复用 Shared 组件：核心控制 (上/停/下)
-                    // 这里的 size: 38 会自动按比例调整三个按钮的大小
-                    PlaybackControls(playerService: playerService, size: 38)
+                    PlaybackControls(playerService: playerService, size: 32)
                     
-                    // 3. 循环播放 (非核心，保留在此)
                     Button(action: { playerService.toggleLoop() }) {
                         Image(systemName: "repeat")
-                            .font(.system(size: 15))
+                            .font(.system(size: 14))
                             .foregroundColor(playerService.isLoopMode ? .blue : .secondary.opacity(0.6))
                     }
                     .buttonStyle(.plain)
                     
-                    // 4. 桌面歌词 (Mac 独有，必须保留在此)
+                    // 桌面歌词按钮
                     Button(action: {
                         DesktopLyricsController.shared.toggle()
                     }) {
-                        Image(systemName: "pip.enter")
-                            .font(.system(size: 15))
-                            .foregroundColor(.secondary)
+                        Text("词")
+                            .font(.system(size: 10, weight: .heavy)) // 稍微调小字号以适应正方形
+                            // ✨ 关键修改 1：根据状态变色 (同时改变文字和边框颜色)
+                            .foregroundColor(DesktopLyricsController.shared.isShow ? .blue : .secondary.opacity(0.6))
+                            // ✨ 关键修改 2：强制指定正方形尺寸 (替代 padding)
+                            .frame(width: 16, height: 16)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 3)
+                                    // 边框颜色也要跟着变
+                                    .stroke(DesktopLyricsController.shared.isShow ? .blue : .secondary.opacity(0.6), lineWidth: 1.5)
+                            )
                     }
                     .buttonStyle(.plain)
                     .help("桌面悬浮歌词")
                 }
             }
-            .frame(maxWidth: 400)
+            .frame(maxWidth: 400) // 限制中间区域宽度
             
             Spacer()
             
-            // --- 3. 右侧：时间进度 ---
-            VStack(alignment: .trailing) {
-                Text(formatTime(playerService.currentTime))
-                    .font(.caption)
-                    .monospacedDigit()
-                    .foregroundColor(.secondary)
-            }
-            .frame(width: 150, alignment: .trailing)
+            // MARK: - 3. 右侧：音量控制 (可选)
+            // 原来的时间进度移到中间了，右侧空出来可以放音量，或者留白
+            // 这里暂时留白，保持对称
+            Color.clear
+                .frame(width: 150, alignment: .trailing)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        // ❌ 删除了：.task(id:)
-        // ✅ 原因：ArtworkView 内部已经有了 .task，这里再写就是重复加载
     }
     
-    func formatTime(_ time: TimeInterval) -> String {
+    // MARK: - Helper
+    private func formatTime(_ time: TimeInterval) -> String {
         let minutes = Int(time) / 60
         let seconds = Int(time) % 60
         return String(format: "%02d:%02d", minutes, seconds)

@@ -7,31 +7,51 @@
 
 import SwiftUI
 
+/// 播放控制组件 (PlaybackControls)
+///
+/// **职责**: 提供上一首、播放/暂停、下一首这三个核心控制按钮。
+/// **特性**:
+/// 1. 样式高度复用：支持通过 `size` 参数整体缩放。
+/// 2. 视觉层级：播放/暂停按钮比两侧按钮大一倍 (1.2x vs 0.6x)，突出核心操作。
+/// 3. 交互优化：播放状态切换时具备丝滑的符号过渡动画。
 struct PlaybackControls: View {
+    
+    // MARK: - Dependencies
     @ObservedObject var playerService: AudioPlayerService
     
-    // 允许外部传入尺寸 (你原代码里图标大小不一，这里统一用比例控制，保持原样风格)
+    /// 基础尺寸基准
+    ///
+    /// 所有按钮的大小和间距都基于此数值进行比例缩放，以保持布局比例一致。
     let size: CGFloat
     
     var body: some View {
-        HStack(spacing: size * 0.6) { // 间距按比例缩放
-            // 1. 上一首 (对应原代码 Button action: playerService.previous())
+        // 使用动态间距：约为基础尺寸的 60%
+        HStack(spacing: size * 0.6) {
+            
+            // MARK: - Previous Track
             Button(action: { playerService.previous() }) {
                 Image(systemName: "backward.fill")
-                    .font(.system(size: size * 0.6)) // 原代码 .title3 约等于 20-24pt
+                    // 辅助按钮大小：基础尺寸的 60%
+                    .font(.system(size: size * 0.6))
             }
             .buttonStyle(.plain)
             
-            // 2. 播放/暂停 (对应原代码 Button action: playerService.togglePlayPause())
+            // MARK: - Play / Pause
             Button(action: { playerService.togglePlayPause() }) {
+                // 根据播放状态切换实心圆图标
                 Image(systemName: playerService.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: size * 1.2)) // 原代码 38pt
+                    // 核心按钮大小：基础尺寸的 120%
+                    .font(.system(size: size * 1.2))
+                    // ✨ 核心修改：添加符号替换的过渡动画
+                    // 当图标从 play 变为 pause 时，会有形变过渡效果 (需 macOS 14+ / iOS 17+)
+                    .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(.plain)
             
-            // 3. 下一首 (对应原代码 Button action: playerService.next())
+            // MARK: - Next Track
             Button(action: { playerService.next() }) {
                 Image(systemName: "forward.fill")
+                    // 辅助按钮大小：基础尺寸的 60%
                     .font(.system(size: size * 0.6))
             }
             .buttonStyle(.plain)

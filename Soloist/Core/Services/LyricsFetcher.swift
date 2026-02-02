@@ -7,85 +7,106 @@
 
 import Foundation
 
-// 定义 LRCLIB 返回的数据格式
+/// LRCLIB 接口返回的歌曲数据模型
 struct LRCLibSong: Codable {
     let id: Int
     let trackName: String
     let artistName: String
     let albumName: String
+    
+    /// 歌曲时长 (秒)
     let duration: Double
-    let syncedLyrics: String?  // 带时间轴的歌词
-    let plainLyrics: String?   // 纯文本歌词
+    
+    /// 带时间轴的歌词 (LRC格式)
+    let syncedLyrics: String?
+    
+    /// 纯文本歌词
+    let plainLyrics: String?
 }
 
+/// 负责从网络获取歌词的工具类
 class LyricsFetcher {
     
-    // 🔍 搜索歌词的主函数
-    // duration: 传入歌曲时长（秒），可以提高匹配准确度。如果不确定填 0。
+    /// 根据歌名、歌手和时长搜索歌词
+    ///
+    /// - Parameters:
+    ///   - title: 歌曲标题
+    ///   - artist: 歌手名称
+    ///   - album: 专辑名称
+    ///   - duration: 歌曲时长（秒），用于辅助筛选最佳匹配结果
+    ///   - completion: 搜索结果回调。成功返回歌词内容字符串，失败返回 nil
     static func search(title: String, artist: String, album: String, duration: TimeInterval, completion: @escaping (String?) -> Void) {
         
-        // 1. 准备搜索参数
+        // 构建 API 请求 URL
         var components = URLComponents(string: "https://lrclib.net/api/search")!
         
-        // 组合查询关键字 "歌手 歌名"
-        let query = "\(artist) \(title)"
-        
+        // 使用指定字段进行精确查询，提高匹配准确度
         components.queryItems = [
-            URLQueryItem(name: "q", value: query)
+            URLQueryItem(name: "track_name", value: title),
+            URLQueryItem(name: "artist_name", value: artist)
         ]
         
         guard let url = components.url else {
-            print("❌ URL 构建失败")
+            print("[LyricsFetcher] URL 构建失败")
             completion(nil)
             return
         }
         
-        print("🌐 [LyricsFetcher] 正在联网搜索: \(query)...")
+        // 配置请求头，设置 User-Agent 以符合 API 调用规范
+        var request = URLRequest(url: url)
+        request.setValue("SoloistApp/1.0 (iOS; SwiftUI)", forHTTPHeaderField: "User-Agent")
         
-        // 2. 发起请求
-        let task = URLSession.shared.dataTask(with: url) { data, response, error in
+        print("[LyricsFetcher] 开始搜索: \(title) - \(artist)")
+        
+        // 发起异步网络请求
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
             guard let data = data, error == nil else {
-                print("❌ [LyricsFetcher] 网络请求出错: \(error?.localizedDescription ?? "未知错误")")
+                print("[LyricsFetcher] 网络请求错误: \(error?.localizedDescription ?? "未知错误")")
                 completion(nil)
                 return
             }
             
             do {
-                // 3. 解析结果
+                // 解析 JSON 数据
                 let results = try JSONDecoder().decode([LRCLibSong].self, from: data)
                 
                 if results.isEmpty {
-                    print("⚠️ [LyricsFetcher] 未找到任何歌词")
                     completion(nil)
                     return
                 }
                 
-                // 4. 智能筛选：找一个时长最接近的 (误差 3 秒内)
                 var bestMatch: LRCLibSong?
                 
+                // 如果提供了时长，优先筛选时长误差在 3 秒以内的结果
                 if duration > 0 {
                     bestMatch = results.first { song in
                         return abs(song.duration - duration) < 3.0
                     }
                 }
                 
-                // 如果没找到时长匹配的，就默认拿第一个
+                // 如果没有找到时长匹配的项目，默认使用第一个搜索结果
                 let finalPick = bestMatch ?? results.first
                 
                 if let song = finalPick {
-                    // 优先返回带时间轴的，没有则返回纯文本
-                    let lyrics = song.syncedLyrics ?? song.plainLyrics
-                    print("✅ [LyricsFetcher] 成功下载歌词: \(song.trackName)")
-                    completion(lyrics)
+                    // 优先返回带时间轴的歌词，如果不存在则返回纯文本歌词
+                    let lyricsContent = song.syncedLyrics ?? song.plainLyrics
+                    
+                    if let content = lyricsContent, !content.isEmpty {
+                        print("[LyricsFetcher] 歌词下载成功: \(song.trackName)")
+                        completion(content)
+                    } else {
+                        completion(nil)
+                    }
                 } else {
                     completion(nil)
                 }
                 
             } catch {
-                print("❌ [LyricsFetcher] JSON 解析失败: \(error)")
+                print("[LyricsFetcher] 数据解析失败: \(error)")
                 completion(nil)
             }
         }
+        
         task.resume()
     }
 }
