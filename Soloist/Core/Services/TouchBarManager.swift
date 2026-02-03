@@ -21,6 +21,9 @@ class TouchBarManager: NSObject {
     
     static let shared = TouchBarManager()
     
+    // 标志位，表示是否正在手动关闭 (去掉 private，供 View 读取)
+    var isDismissingManually = false
+    
     /// 对外暴露的只读属性，用于 UI 层判断是否显示相关按钮
     #if PRIVATE_TOUCHBAR
     let isFeatureAvailable = true
@@ -47,7 +50,8 @@ class TouchBarManager: NSObject {
     /// 强制显示
     func present() {
         #if PRIVATE_TOUCHBAR
-        dismiss()
+        dismiss() // 先清理旧的
+        
         let touchBar = NSTouchBar()
         touchBar.delegate = self
         touchBar.defaultItemIdentifiers = [.lyricsItem]
@@ -63,13 +67,22 @@ class TouchBarManager: NSObject {
     /// 销毁隐藏
     func dismiss() {
         #if PRIVATE_TOUCHBAR
+        // 1. 标记为手动关闭，防止触发 onDisappear 的自动同步逻辑
+        isDismissingManually = true
+        
         if let touchBar = systemTouchBar {
             NSTouchBar.dismissSystemModal(touchBar: touchBar)
             systemTouchBar = nil
         }
+        
         // 双重保险清理
         let dummy = NSTouchBar()
         NSTouchBar.dismissSystemModal(touchBar: dummy)
+        
+        // 2. 延迟重置标记 (给 onDisappear 留出反应时间)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.isDismissingManually = false
+        }
         #endif
     }
 }
@@ -141,6 +154,29 @@ struct TouchBarLyricsView: View {
                 .transition(.opacity.animation(.easeInOut(duration: 0.3)))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // ✨✨✨ 核心修复：监听视图消失，同步系统 X 按钮的状态 ✨✨✨
+        .onDisappear {
+            // 判断逻辑：
+            // 1. 不是我们代码主动调用的 dismiss (isDismissingManually == false)
+            // 2. 且 App 内部记录的状态还是开启 (UserDefaults == true)
+            // -> 说明是用户按了 Touch Bar 上的系统 X 按钮
+            if !TouchBarManager.shared.isDismissingManually && UserDefaults.standard.bool(forKey: "showTouchBarLyrics") {
+                
+                print("⚠️ 检测到 Touch Bar 被外部关闭，正在同步状态...")
+                
+                // 1. 修正 UserDefaults
+                UserDefaults.standard.set(false, forKey: "showTouchBarLyrics")
+                
+                // 2. 必须在主线程发送通知，通知 AppDelegate 和 UI 刷新
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: nil)
+                    
+                    // 清理引用 (此时 View 已经没了，只需要把 Manager 里的 systemTouchBar 置空)
+                    // 注意：这里不要调用 dismiss()，否则会触发递归逻辑，手动清理即可
+                    // 但为了简单，调用 dismiss() 因为有标志位保护也是安全的，不过这里没必要
+                }
+            }
+        }
     }
 }
 
