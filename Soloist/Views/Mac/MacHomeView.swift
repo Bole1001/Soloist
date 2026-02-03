@@ -26,6 +26,9 @@ struct MacHomeView: View {
     /// 侧边栏选中项 ID
     @State private var selection: String? = "all"
     
+    // 将封面数据提升为 View 的 State
+    @State private var currentArtworkData: Data? = nil
+    
     var body: some View {
         ZStack {
             
@@ -77,7 +80,7 @@ struct MacHomeView: View {
                 // === 右侧：详情内容区域 ===
                 ZStack {
                     // 1. 动态毛玻璃背景层 (随封面变化)
-                    HomeBackgroundView(playerService: playerService)
+                    HomeBackgroundView(artworkData: currentArtworkData)
                     
                     // 2. 内容层 (列表 + 空状态)
                     VStack(spacing: 0) {
@@ -148,6 +151,15 @@ struct MacHomeView: View {
         // 歌词页切换动画
         .animation(.easeInOut(duration: 0.3), value: showLyricsPage)
         
+        // 监听歌曲 ID 变化，异步加载封面
+        .task(id: playerService.currentSong?.id) {
+            if let song = playerService.currentSong {
+                currentArtworkData = await ArtworkLoader.loadArtwork(for: song)
+            } else {
+                currentArtworkData = nil
+            }
+        }
+        
         // Touch Bar 默认显示内容
         .touchBar {
             Text(playerService.currentLyric.isEmpty ? (playerService.currentSong?.title ?? "Soloist") : playerService.currentLyric)
@@ -178,56 +190,43 @@ struct MacHomeView: View {
 ///
 /// 根据当前播放的歌曲封面生成高斯模糊背景，无封面时显示默认极光渐变。
 struct HomeBackgroundView: View {
-    @ObservedObject var playerService: AudioPlayerService
-    
-    /// 异步加载的封面数据缓存
-    @State private var currentArtwork: Data? = nil
+    let artworkData: Data?
     
     var body: some View {
-        GeometryReader { geo in
-            Group {
-                if let data = currentArtwork,
-                   let nsImage = NSImage(data: data) {
-                    // 方案 A: 有封面 -> 显示高斯模糊背景
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .drawingGroup() // 启用 Metal 渲染加速模糊计算
-                        .blur(radius: 80)
-                        .overlay(Color.black.opacity(0.2)) // 压暗处理，保证前景文字可读性
-                } else {
-                    // 方案 B: 无封面 -> 显示默认极光渐变
-                    ZStack {
-                        Color(nsColor: .windowBackgroundColor)
-                        
-                        Circle()
-                            .fill(Color.blue.opacity(0.2))
-                            .frame(width: 400, height: 400)
-                            .blur(radius: 100)
-                            .offset(x: -100, y: -100)
-                        
-                        Circle()
-                            .fill(Color.purple.opacity(0.2))
-                            .frame(width: 300, height: 300)
+            GeometryReader { geo in
+                Group {
+                    if let data = artworkData,
+                       let nsImage = NSImage(data: data) {
+                        // 方案 A: 有封面 -> Metal 加速模糊
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .drawingGroup() // 依然保留 Metal，但现在每首歌只调用一次
                             .blur(radius: 80)
-                            .offset(x: 200, y: 100)
+                            .overlay(Color.black.opacity(0.2))
+                    } else {
+                        // 方案 B: 无封面 -> 静态渐变
+                        ZStack {
+                            Color(nsColor: .windowBackgroundColor)
+                            Circle()
+                                .fill(Color.blue.opacity(0.2))
+                                .frame(width: 400, height: 400)
+                                .blur(radius: 100)
+                                .offset(x: -100, y: -100)
+                            
+                            Circle()
+                                .fill(Color.purple.opacity(0.2))
+                                .frame(width: 300, height: 300)
+                                .blur(radius: 80)
+                                .offset(x: 200, y: 100)
+                        }
                     }
                 }
             }
-        }
-        .ignoresSafeArea()
-        // 监听歌曲 ID 变化，异步重新加载背景
-        .task(id: playerService.currentSong?.id) {
-            if let song = playerService.currentSong {
-                currentArtwork = await ArtworkLoader.loadArtwork(for: song)
-            } else {
-                currentArtwork = nil
-            }
+            .ignoresSafeArea()
         }
     }
-}
-
 #Preview {
     MacHomeView()
 }

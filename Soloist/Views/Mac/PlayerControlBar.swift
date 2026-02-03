@@ -51,47 +51,47 @@ struct PlayerControlBar: View {
                 
                 // A. 进度条区域
                 if playerService.duration > 0 {
-                    HStack(spacing: 8) {
-                        // 当前时间 (拖拽时显示拖拽时间，否则显示播放时间)
-                        Text(formatTime(isDragging ? dragProgress : playerService.currentTime))
-                            .font(.caption2)
-                            .monospacedDigit()
-                            .foregroundColor(.secondary)
-                            .frame(width: 40, alignment: .trailing)
-                        
-                        // 进度滑块
-                        Slider(
-                            value: Binding(
-                                get: {
-                                    // 如果正在拖拽，显示临时值；否则显示真实播放进度
-                                    isDragging ? dragProgress : playerService.currentTime
-                                },
-                                set: { newValue in
-                                    // 拖拽过程中只更新 UI，不发送 seek 指令
-                                    isDragging = true
-                                    dragProgress = newValue
+                    TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                        HStack(spacing: 8) {
+                            // 当前时间
+                            Text(formatTime(isDragging ? dragProgress : playerService.currentTime))
+                                .font(.caption2)
+                                .monospacedDigit()
+                                .foregroundColor(.secondary)
+                                .frame(width: 40, alignment: .trailing)
+                            
+                            // 进度滑块
+                            Slider(
+                                value: Binding(
+                                    get: {
+                                        // 主动读取 Service 里的普通变量
+                                        isDragging ? dragProgress : playerService.currentTime
+                                    },
+                                    set: { newValue in
+                                        isDragging = true
+                                        dragProgress = newValue
+                                    }
+                                ),
+                                in: 0...playerService.duration,
+                                onEditingChanged: { editing in
+                                    isDragging = editing
+                                    if !editing {
+                                        playerService.seek(to: dragProgress)
+                                    }
                                 }
-                            ),
-                            in: 0...playerService.duration,
-                            onEditingChanged: { editing in
-                                isDragging = editing
-                                if !editing {
-                                    // 发送 seek 指令给后端
-                                    playerService.seek(to: dragProgress)
-                                }
-                            }
-                        )
-                        .controlSize(.small) // 使用小尺寸滑块，更精致
-                        
-                        // 总时长
-                        Text(formatTime(playerService.duration))
-                            .font(.caption2)
-                            .monospacedDigit()
-                            .foregroundColor(.secondary)
-                            .frame(width: 40, alignment: .leading)
+                            )
+                            .controlSize(.small)
+                            
+                            // 总时长
+                            Text(formatTime(playerService.duration))
+                                .font(.caption2)
+                                .monospacedDigit()
+                                .foregroundColor(.secondary)
+                                .frame(width: 40, alignment: .leading)
+                        }
                     }
                 } else {
-                    // 如果没有时长数据 (未播放)，显示占位条
+                    // 未播放/无时长时的占位
                     ProgressView(value: 0)
                         .progressViewStyle(.linear)
                         .frame(height: 6)

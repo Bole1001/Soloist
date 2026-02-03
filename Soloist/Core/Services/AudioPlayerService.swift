@@ -51,7 +51,8 @@ class AudioPlayerService: NSObject, ObservableObject {
     @Published var isPlaying: Bool = false
     
     /// 当前播放进度 (秒)
-    @Published var currentTime: TimeInterval = 0
+    //@Published var currentTime: TimeInterval = 0
+    var currentTime: TimeInterval = 0
     
     /// 当前歌曲总时长 (秒)
     @Published var duration: TimeInterval = 0
@@ -111,14 +112,22 @@ class AudioPlayerService: NSObject, ObservableObject {
     
     /// 连接 AudioEngine 的闭包回调到 Service 的状态更新逻辑
     private func setupEngineCallbacks() {
-        // 1. 进度更新 (每 0.1s 触发)
+        // 1.只有歌词变化时才通知 UI
         engine.onTimeUpdate = { [weak self] time in
-            // 确保在主线程更新 UI 状态
-            DispatchQueue.main.async {
-                self?.currentTime = time
-                self?.updateLyrics() // 检查是否需要滚动歌词
-            }
-        }
+                    guard let self = self else { return }
+                    
+                    // 1. 静默更新数值 (原子操作，线程安全基本没问题，或者加锁)
+                    self.currentTime = time
+                    
+                    // 2. 检查歌词 (只有行数变了才去主线程刷新 UI)
+                    if let lineText = self.lyricsManager.findCurrentLine(in: self.lyrics, at: time),
+                       lineText != self.currentLyric {
+                        
+                        DispatchQueue.main.async {
+                            self.currentLyric = lineText
+                        }
+                    }
+                }
         
         // 2. 自然播放结束
         engine.onPlaybackFinished = { [weak self] in
