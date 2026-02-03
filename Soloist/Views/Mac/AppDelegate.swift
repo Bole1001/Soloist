@@ -159,5 +159,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func nextSong() { playerService.next() }
     @objc func toggleDesktopLyrics() { DesktopLyricsController.shared.toggle() }
     @objc func quitApp() { NSApp.terminate(nil) }
+    
+    // MARK: - App Lifecycle
+        
+    // 点击红绿灯关闭窗口时，不退出 App
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return false
+    }
+    
+    // 点击 Dock 图标时重新打开窗口
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            // 如果没有可见窗口，就让主窗口显示出来
+            for window in sender.windows {
+                window.makeKeyAndOrderFront(self)
+            }
+        }
+        return true
+    }
 }
 #endif
