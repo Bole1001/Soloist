@@ -18,7 +18,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var cancellables = Set<AnyCancellable>()
     let playerService = AudioPlayerService.shared
     
-    // 菜单对象 (现在作为一个属性保存，而不是直接赋给 statusItem)
+    // 菜单对象
     var contextMenu: NSMenu!
     
     // 状态开关
@@ -34,124 +34,158 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.imagePosition = .imageTrailing
             button.title = ""
             
-            // ✨✨✨ 核心修改：手动接管点击事件 ✨✨✨
             button.action = #selector(menuBarClickHandler)
             button.target = self
-            
-            // 关键：告诉系统，我要同时监听“左键抬起”和“右键抬起”
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         
-        // 2. 初始化菜单 (存入 contextMenu 变量，先不显示)
+        // 2. 初始化菜单
         setupMenu()
         
         // 3. 绑定数据监听
         setupBindings()
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleSettingsChange),
+            name: UserDefaults.didChangeNotification, // 监听设置变化
+            object: nil
+        )
+        
+        self.showMenuBarLyrics = UserDefaults.standard.bool(forKey: "showMenuBarLyrics")
+        updateMenuBarAppearance(lyric: playerService.currentLyric, isPlaying: playerService.isPlaying)
     }
     
-    // MARK: - ✨ New Click Logic
+    // MARK: - Click Logic
     
     @objc func menuBarClickHandler(_ sender: NSStatusBarButton) {
         guard let event = NSApp.currentEvent else { return }
         
-        // 判断是否是 右键点击 或者 按住 Control 点击
         if event.type == .rightMouseUp || event.modifierFlags.contains(.control) {
-            // 👉 右键：弹出菜单
-            statusItem?.menu = contextMenu // 临时挂载菜单
-            statusItem?.button?.performClick(nil) // 触发系统弹窗
-            statusItem?.menu = nil // 弹完后立即卸载，为下次左键做准备
+            statusItem?.menu = contextMenu
+            statusItem?.button?.performClick(nil)
+            statusItem?.menu = nil
         } else {
-            // 👉 左键：切换主窗口显示/隐藏
             toggleMainWindow()
         }
     }
     
-    // 切换主窗口逻辑：如果显示就隐藏，如果隐藏就显示
     func toggleMainWindow() {
-        // 获取主窗口
         guard let window = NSApp.windows.first(where: { $0.title == "Soloist" }) else { return }
-        
         if window.isVisible && window.isKeyWindow {
-            // 如果窗口正在最前显示，则隐藏 (类似很多工具软件的逻辑)
             window.orderOut(nil)
         } else {
-            // 否则，前置显示并激活 App
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
         }
     }
 
-    // MARK: - App Lifecycle (保留你刚才加的保活逻辑)
+    // MARK: - App Lifecycle
     
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
-            toggleMainWindow()
-        }
+        if !flag { toggleMainWindow() }
         return true
+    }
+    
+    // MARK: - Handle Settings Change
+    
+    /// 当你在主界面点击“栏”字时，会触发这个方法
+    @objc func handleSettingsChange() {
+        // 1. 重新读取最新的开关状态
+        let newShowState = UserDefaults.standard.bool(forKey: "showMenuBarLyrics")
+        
+        // 2. 如果状态确实变了，才去刷新 UI
+        if self.showMenuBarLyrics != newShowState {
+            self.showMenuBarLyrics = newShowState
+            
+            // 3. 确保在主线程刷新
+            DispatchQueue.main.async {
+                self.updateMenuBarAppearance(
+                    lyric: self.playerService.currentLyric,
+                    isPlaying: self.playerService.isPlaying
+                )
+            }
+        }
+        DispatchQueue.main.async {
+            self.updateMenuState()
+        }
     }
     
     // MARK: - Setup Menu
     
-    // 配置下拉菜单 (逻辑不变，只是最后不赋值给 statusItem.menu)
     func setupMenu() {
-        let menu = NSMenu()
-        
-        // 1. Navigation (左键已经能打开主窗口了，这个菜单项可以留着备用，或者去掉)
-        let openItem = NSMenuItem(title: "显示主界面", action: #selector(openMainWindow), keyEquivalent: "o")
-        menu.addItem(openItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // 2. Toggle Lyrics
-        let lyricsTitle = showMenuBarLyrics ? "关闭状态栏歌词" : "开启状态栏歌词"
-        let toggleItem = NSMenuItem(title: lyricsTitle, action: #selector(toggleLyrics), keyEquivalent: "")
-        toggleItem.tag = 101
-        menu.addItem(toggleItem)
-        
-        // 3. TouchBar
-        if TouchBarManager.shared.isFeatureAvailable {
-            let tbItem = NSMenuItem(title: "开启/关闭 触控栏歌词", action: #selector(toggleTouchBar), keyEquivalent: "T")
-            tbItem.keyEquivalentModifierMask = [.command, .shift]
-            menu.addItem(tbItem)
+            let menu = NSMenu()
+            
+            let openItem = NSMenuItem(title: "显示主界面", action: #selector(openMainWindow), keyEquivalent: "o")
+            menu.addItem(openItem)
+            menu.addItem(NSMenuItem.separator())
+            
+            let infoItem = NSMenuItem(title: playerService.currentSong?.title ?? "Soloist", action: nil, keyEquivalent: "")
+            infoItem.tag = 102
+            infoItem.isEnabled = false
+            menu.addItem(infoItem)
+            
+            let playItem = NSMenuItem(title: "播放/暂停", action: #selector(playPause), keyEquivalent: " ")
+            menu.addItem(playItem)
+            
+            menu.addItem(NSMenuItem(title: "上一首", action: #selector(prevSong), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "下一首", action: #selector(nextSong), keyEquivalent: ""))
+            
+            menu.addItem(NSMenuItem.separator())
+            
+            // 1. 桌面悬浮歌词 (修改：添加变量、Tag)
+            let desktopItem = NSMenuItem(title: "桌面悬浮歌词", action: #selector(toggleDesktopLyrics), keyEquivalent: "T")
+            desktopItem.tag = 103
+            menu.addItem(desktopItem)
+            
+            // 2. 状态栏歌词 (原有)
+            let toggleItem = NSMenuItem(title: "状态栏歌词", action: #selector(toggleLyrics), keyEquivalent: "Y")
+            toggleItem.tag = 101
+            menu.addItem(toggleItem)
+            
+            // 3. 触控栏歌词 (修改：添加 Tag)
+            if TouchBarManager.shared.isFeatureAvailable {
+                let tbItem = NSMenuItem(title: "触控栏歌词", action: #selector(toggleTouchBar), keyEquivalent: "U")
+                tbItem.keyEquivalentModifierMask = [.command, .shift]
+                tbItem.tag = 104 // ✨ 设置 Tag 方便查找
+                menu.addItem(tbItem)
+            }
+            
+            menu.addItem(NSMenuItem.separator())
+            menu.addItem(NSMenuItem(title: "退出 Soloist", action: #selector(quitApp), keyEquivalent: "q"))
+            
+            self.contextMenu = menu
+            
+            updateMenuState()
         }
         
-        // 4. Player Controls
-        let infoItem = NSMenuItem(title: playerService.currentSong?.title ?? "Soloist", action: nil, keyEquivalent: "")
-        infoItem.tag = 102
-        infoItem.isEnabled = false
-        menu.addItem(infoItem)
-        
-        let playItem = NSMenuItem(title: "播放/暂停", action: #selector(playPause), keyEquivalent: " ")
-        menu.addItem(playItem)
-        
-        menu.addItem(NSMenuItem(title: "上一首", action: #selector(prevSong), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "下一首", action: #selector(nextSong), keyEquivalent: ""))
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // 5. System Features
-        menu.addItem(NSMenuItem(title: "桌面悬浮歌词", action: #selector(toggleDesktopLyrics), keyEquivalent: ""))
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // 6. Quit
-        menu.addItem(NSMenuItem(title: "退出 Soloist", action: #selector(quitApp), keyEquivalent: "q"))
-        
-        // ✨ 改动：保存到 self.contextMenu，而不是 statusItem.menu
-        self.contextMenu = menu
-        
-        // 初始更新菜单状态
-        if let item = menu.item(withTag: 101) {
-            let isOn = UserDefaults.standard.bool(forKey: "showMenuBarLyrics") // 这里简化读取，实际可以用变量
-            item.state = isOn ? .on : .off
+        func updateMenuState() {
+            guard let menu = self.contextMenu else { return }
+            
+            // 1. 更新状态栏歌词勾选
+            if let item = menu.item(withTag: 101) {
+                let isOn = UserDefaults.standard.bool(forKey: "showMenuBarLyrics")
+                item.state = isOn ? .on : .off
+            }
+            
+            // 2. 更新桌面歌词勾选
+            if let item = menu.item(withTag: 103) {
+                let isOn = UserDefaults.standard.bool(forKey: "showDesktopLyrics")
+                item.state = isOn ? .on : .off
+            }
+            
+            // 3. 更新触控栏歌词勾选
+            if let item = menu.item(withTag: 104) {
+                let isOn = UserDefaults.standard.bool(forKey: "showTouchBarLyrics")
+                item.state = isOn ? .on : .off
+            }
         }
-    }
     
-    // MARK: - Bindings & Updates (保持不变)
+    // MARK: - Bindings & Updates
     
     func setupBindings() {
         playerService.$currentLyric
@@ -166,6 +200,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func updateMenuBarAppearance(lyric: String, isPlaying: Bool) {
         guard let button = statusItem?.button else { return }
         
+        // 判断条件：开关开启 && 正在播放 && 有歌词
         if showMenuBarLyrics && isPlaying && !lyric.isEmpty {
             button.title = String(lyric.prefix(20))
             button.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
@@ -175,7 +210,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func updateMenuContent(song: Song?) {
-        // ✨ 改动：从 contextMenu 获取 item
         if let infoItem = contextMenu.item(withTag: 102) {
             infoItem.title = song?.title ?? "Soloist"
         }
@@ -184,27 +218,62 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Actions
     
     @objc func openMainWindow() {
-        // 复用 toggle 逻辑，强制显示
         let window = NSApp.windows.first(where: { $0.title == "Soloist" })
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }
     
+    // 1. 状态栏歌词点击
     @objc func toggleLyrics() {
         showMenuBarLyrics.toggle()
-        // 更新菜单文字
-        if let item = contextMenu.item(withTag: 101) {
-            item.title = showMenuBarLyrics ? "关闭状态栏歌词" : "开启状态栏歌词"
-        }
+        
+        // 保存设置
+        UserDefaults.standard.set(showMenuBarLyrics, forKey: "showMenuBarLyrics")
+        
+        // 刷新 UI
         updateMenuBarAppearance(lyric: playerService.currentLyric, isPlaying: playerService.isPlaying)
+        updateMenuState() // 刷新勾选
+        
+        // 通知主界面
+        NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: nil)
+    }
+
+    // 2. 触控栏歌词点击
+    @objc func toggleTouchBar() {
+        // 读取 -> 取反 -> 保存
+        var isOn = UserDefaults.standard.bool(forKey: "showTouchBarLyrics")
+        isOn.toggle()
+        UserDefaults.standard.set(isOn, forKey: "showTouchBarLyrics")
+        
+        // 执行实际显示/隐藏
+        if isOn {
+            TouchBarManager.shared.present()
+        } else {
+            TouchBarManager.shared.dismiss()
+        }
+        
+        // 刷新勾选 & 通知主界面
+        updateMenuState()
+        NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: nil)
+    }
+
+    // 3. 桌面悬浮歌词点击
+    @objc func toggleDesktopLyrics() {
+        // 执行切换
+        DesktopLyricsController.shared.toggle()
+        
+        // 保存当前实际状态
+        let newState = DesktopLyricsController.shared.isShow
+        UserDefaults.standard.set(newState, forKey: "showDesktopLyrics")
+        
+        // 刷新勾选 & 通知主界面
+        updateMenuState()
+        NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: nil)
     }
     
-    // 其他 Action 保持不变...
-    @objc func toggleTouchBar() { TouchBarManager.shared.toggle() }
     @objc func playPause() { playerService.togglePlayPause() }
     @objc func prevSong() { playerService.previous() }
     @objc func nextSong() { playerService.next() }
-    @objc func toggleDesktopLyrics() { DesktopLyricsController.shared.toggle() }
     @objc func quitApp() { NSApp.terminate(nil) }
 }
 #endif

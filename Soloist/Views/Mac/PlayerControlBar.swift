@@ -14,26 +14,34 @@ struct PlayerControlBar: View {
     @ObservedObject var playerService: AudioPlayerService
     @Binding var showLyrics: Bool
     
-    // MARK: - Local State for Slider
-    /// 是否正在拖拽进度条 (用于解决“拖拽时被定时器重置”的冲突问题)
+    // MARK: - Persistent Settings
+    
+    // 1. 桌面歌词开关 (新增：让桌面歌词也能记住开关状态)
+    @AppStorage("showDesktopLyrics") private var showDesktopLyrics: Bool = false
+    
+    // 2. 状态栏歌词开关
+    @AppStorage("showMenuBarLyrics") private var showMenuBarLyrics: Bool = false
+    
+    // 3. 触控栏歌词开关
+    @AppStorage("showTouchBarLyrics") private var showTouchBarLyrics: Bool = false
+    
+    // MARK: - Local State
     @State private var isDragging: Bool = false
-    /// 拖拽过程中的临时进度值
     @State private var dragProgress: Double = 0.0
     
-    // MARK: - Body
     var body: some View {
         HStack(spacing: 20) {
             
-            // MARK: - 1. 左侧：歌曲信息
+            // MARK: - 1. 左侧：歌曲信息 (保持不变)
             HStack {
                 ArtworkView(song: playerService.currentSong, size: 48)
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(playerService.currentSong?.title ?? "未播放")
+                    Text(playerService.currentSong?.title ?? "Soloist")
                         .font(.headline)
                         .lineLimit(1)
                     
-                    Text(playerService.currentSong?.artist ?? "-")
+                    Text(playerService.currentSong?.artist ?? "让音乐回归纯粹")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
@@ -42,118 +50,191 @@ struct PlayerControlBar: View {
             }
             .contentShape(Rectangle())
             .onTapGesture { showLyrics.toggle() }
-            .help("点击查看完整歌词")
+            .help("点击展开全屏歌词")
             
             Spacer()
             
-            // MARK: - 2. 中间：控制按钮 + 进度条
-            VStack(spacing: 8) {
+            // MARK: - 2. 中间：核心控制区 (保持不变)
+            VStack(spacing: 6) {
                 
-                // A. 进度条区域
+                // A. 进度条 (TimelineView)
                 if playerService.duration > 0 {
                     TimelineView(.periodic(from: .now, by: 0.5)) { _ in
                         HStack(spacing: 8) {
-                            // 当前时间
                             Text(formatTime(isDragging ? dragProgress : playerService.currentTime))
-                                .font(.caption2)
-                                .monospacedDigit()
+                                .font(.system(size: 10).monospacedDigit())
                                 .foregroundColor(.secondary)
-                                .frame(width: 40, alignment: .trailing)
+                                .frame(width: 35, alignment: .trailing)
                             
-                            // 进度滑块
                             Slider(
                                 value: Binding(
-                                    get: {
-                                        // 主动读取 Service 里的普通变量
-                                        isDragging ? dragProgress : playerService.currentTime
-                                    },
-                                    set: { newValue in
-                                        isDragging = true
-                                        dragProgress = newValue
-                                    }
+                                    get: { isDragging ? dragProgress : playerService.currentTime },
+                                    set: { isDragging = true; dragProgress = $0 }
                                 ),
                                 in: 0...playerService.duration,
                                 onEditingChanged: { editing in
                                     isDragging = editing
-                                    if !editing {
-                                        playerService.seek(to: dragProgress)
-                                    }
+                                    if !editing { playerService.seek(to: dragProgress) }
                                 }
                             )
-                            .controlSize(.small)
+                            .controlSize(.mini)
+                            .tint(.primary)
                             
-                            // 总时长
                             Text(formatTime(playerService.duration))
-                                .font(.caption2)
-                                .monospacedDigit()
+                                .font(.system(size: 10).monospacedDigit())
                                 .foregroundColor(.secondary)
-                                .frame(width: 40, alignment: .leading)
+                                .frame(width: 35, alignment: .leading)
                         }
                     }
                 } else {
-                    // 未播放/无时长时的占位
-                    ProgressView(value: 0)
-                        .progressViewStyle(.linear)
-                        .frame(height: 6)
-                        .opacity(0.5)
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.2))
+                        .frame(height: 4)
+                        .padding(.horizontal, 40)
                 }
                 
-                // B. 按钮区域
-                HStack(spacing: 24) {
-                    Button(action: { playerService.toggleShuffle() }) {
-                        Image(systemName: "shuffle")
-                            .font(.system(size: 14))
-                            .foregroundColor(playerService.isShuffleMode ? .blue : .secondary.opacity(0.6))
+                // B. 播放控制按钮
+                HStack(spacing: 28) {
+                    ControlButton(icon: "shuffle", isActive: playerService.isShuffleMode) {
+                        playerService.toggleShuffle()
+                    }
+                    
+                    Button(action: { playerService.previous() }) {
+                        Image(systemName: "backward.end.fill").font(.system(size: 16))
                     }
                     .buttonStyle(.plain)
                     
-                    PlaybackControls(playerService: playerService, size: 32)
-                    
-                    Button(action: { playerService.toggleLoop() }) {
-                        Image(systemName: "repeat")
-                            .font(.system(size: 14))
-                            .foregroundColor(playerService.isLoopMode ? .blue : .secondary.opacity(0.6))
+                    Button(action: { playerService.togglePlayPause() }) {
+                        Image(systemName: playerService.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                            .font(.system(size: 32))
+                            .symbolRenderingMode(.hierarchical)
                     }
                     .buttonStyle(.plain)
                     
-                    // 桌面歌词按钮
-                    Button(action: {
-                        DesktopLyricsController.shared.toggle()
-                    }) {
-                        Text("词")
-                            .font(.system(size: 10, weight: .heavy)) // 稍微调小字号以适应正方形
-                            // ✨ 关键修改 1：根据状态变色 (同时改变文字和边框颜色)
-                            .foregroundColor(DesktopLyricsController.shared.isShow ? .blue : .secondary.opacity(0.6))
-                            // ✨ 关键修改 2：强制指定正方形尺寸 (替代 padding)
-                            .frame(width: 16, height: 16)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 3)
-                                    // 边框颜色也要跟着变
-                                    .stroke(DesktopLyricsController.shared.isShow ? .blue : .secondary.opacity(0.6), lineWidth: 1.5)
-                            )
+                    Button(action: { playerService.next() }) {
+                        Image(systemName: "forward.end.fill").font(.system(size: 16))
                     }
                     .buttonStyle(.plain)
-                    .help("桌面悬浮歌词")
+                    
+                    ControlButton(icon: "repeat", isActive: playerService.isLoopMode) {
+                        playerService.toggleLoop()
+                    }
                 }
             }
-            .frame(maxWidth: 400) // 限制中间区域宽度
+            .frame(maxWidth: 420)
             
             Spacer()
             
-            // MARK: - 3. 右侧：音量控制 (可选)
-            // 原来的时间进度移到中间了，右侧空出来可以放音量，或者留白
-            // 这里暂时留白，保持对称
-            Color.clear
-                .frame(width: 150, alignment: .trailing)
+            // MARK: - 3. 右侧：视觉输出控制组 (纯文字风格)
+            HStack(spacing: 12) {
+                
+                Divider().frame(height: 20)
+                
+                // 1. 桌面歌词 -> "词"
+                TextToggleButton(
+                    text: "词",
+                    isActive: showDesktopLyrics, // 绑定 AppStorage
+                    help: "桌面悬浮歌词"
+                ) {
+                    showDesktopLyrics.toggle()
+                    // 动作：根据新状态显示或隐藏
+                    if showDesktopLyrics {
+                        DesktopLyricsController.shared.show()
+                    } else {
+                        DesktopLyricsController.shared.hide()
+                    }
+                }
+                .onAppear {
+                    // 启动自动恢复
+                    if showDesktopLyrics { DesktopLyricsController.shared.show() }
+                }
+                
+                // 2. 状态栏歌词 -> "栏"
+                TextToggleButton(
+                    text: "栏",
+                    isActive: showMenuBarLyrics,
+                    help: "状态栏歌词"
+                ) {
+                    showMenuBarLyrics.toggle()
+                    // 关键修复：强制通知 AppDelegate 刷新 (解决点击没反应的问题)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: nil)
+                    }
+                }
+                
+                // 3. 触控栏歌词 -> "触"
+                if TouchBarManager.shared.isFeatureAvailable {
+                    TextToggleButton(
+                        text: "触",
+                        isActive: showTouchBarLyrics,
+                        help: "触控栏歌词"
+                    ) {
+                        showTouchBarLyrics.toggle()
+                        if showTouchBarLyrics {
+                            TouchBarManager.shared.present()
+                        } else {
+                            TouchBarManager.shared.dismiss()
+                        }
+                    }
+                    .onAppear {
+                        if showTouchBarLyrics { TouchBarManager.shared.present() }
+                    }
+                }
+            }
+            .frame(width: 150, alignment: .trailing)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
     }
     
-    // MARK: - Helper
+    // MARK: - Helper Methods
     private func formatTime(_ time: TimeInterval) -> String {
-        let minutes = Int(time) / 60
-        let seconds = Int(time) % 60
-        return String(format: "%02d:%02d", minutes, seconds)
+        guard !time.isNaN && !time.isInfinite else { return "00:00" }
+        let m = Int(time) / 60
+        let s = Int(time) % 60
+        return String(format: "%02d:%02d", m, s)
+    }
+}
+
+// MARK: - Subcomponents
+
+/// 纯文字风格的开关按钮 (保持"词"字的方块风格)
+struct TextToggleButton: View {
+    let text: String
+    let isActive: Bool
+    let help: String
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Text(text)
+                // 保持原本的硬核风格：特粗字体，字号 10
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundColor(isActive ? .accentColor : .secondary.opacity(0.6))
+                .frame(width: 16, height: 16)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 3)
+                        // ✨ 修复点：显式使用 Color.accentColor 和 Color.secondary
+                        .stroke(isActive ? Color.accentColor : Color.secondary.opacity(0.6), lineWidth: 1.5)
+                )
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+}
+
+struct ControlButton: View {
+    let icon: String
+    let isActive: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundColor(isActive ? .accentColor : .secondary)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
