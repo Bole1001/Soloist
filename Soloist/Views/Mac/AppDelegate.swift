@@ -18,60 +18,111 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var cancellables = Set<AnyCancellable>()
     let playerService = AudioPlayerService.shared
     
-    // 状态开关 (默认关闭，每次重启重置)
+    // 菜单对象 (现在作为一个属性保存，而不是直接赋给 statusItem)
+    var contextMenu: NSMenu!
+    
+    // 状态开关
     var showMenuBarLyrics: Bool = false
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // 1. 创建状态栏 Item (长度可变)
+        // 1. 创建状态栏 Item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         if let button = statusItem?.button {
-            // 设置图标
             button.image = NSImage(named: "MenuBarIcon")
-            button.image?.isTemplate = true // 适应黑白/深色模式
-            
-            // 核心设置：图标在右，文字在左
+            button.image?.isTemplate = true
             button.imagePosition = .imageTrailing
-            
-            // 初始标题为空
             button.title = ""
+            
+            // ✨✨✨ 核心修改：手动接管点击事件 ✨✨✨
+            button.action = #selector(menuBarClickHandler)
+            button.target = self
+            
+            // 关键：告诉系统，我要同时监听“左键抬起”和“右键抬起”
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         
-        // 2. 初始化菜单
+        // 2. 初始化菜单 (存入 contextMenu 变量，先不显示)
         setupMenu()
         
         // 3. 绑定数据监听
         setupBindings()
     }
     
-    // 配置下拉菜单
+    // MARK: - ✨ New Click Logic
+    
+    @objc func menuBarClickHandler(_ sender: NSStatusBarButton) {
+        guard let event = NSApp.currentEvent else { return }
+        
+        // 判断是否是 右键点击 或者 按住 Control 点击
+        if event.type == .rightMouseUp || event.modifierFlags.contains(.control) {
+            // 👉 右键：弹出菜单
+            statusItem?.menu = contextMenu // 临时挂载菜单
+            statusItem?.button?.performClick(nil) // 触发系统弹窗
+            statusItem?.menu = nil // 弹完后立即卸载，为下次左键做准备
+        } else {
+            // 👉 左键：切换主窗口显示/隐藏
+            toggleMainWindow()
+        }
+    }
+    
+    // 切换主窗口逻辑：如果显示就隐藏，如果隐藏就显示
+    func toggleMainWindow() {
+        // 获取主窗口
+        guard let window = NSApp.windows.first(where: { $0.title == "Soloist" }) else { return }
+        
+        if window.isVisible && window.isKeyWindow {
+            // 如果窗口正在最前显示，则隐藏 (类似很多工具软件的逻辑)
+            window.orderOut(nil)
+        } else {
+            // 否则，前置显示并激活 App
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    // MARK: - App Lifecycle (保留你刚才加的保活逻辑)
+    
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return false
+    }
+    
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            toggleMainWindow()
+        }
+        return true
+    }
+    
+    // MARK: - Setup Menu
+    
+    // 配置下拉菜单 (逻辑不变，只是最后不赋值给 statusItem.menu)
     func setupMenu() {
         let menu = NSMenu()
         
-        // Navigation
+        // 1. Navigation (左键已经能打开主窗口了，这个菜单项可以留着备用，或者去掉)
         let openItem = NSMenuItem(title: "显示主界面", action: #selector(openMainWindow), keyEquivalent: "o")
         menu.addItem(openItem)
         
         menu.addItem(NSMenuItem.separator())
         
-        // Toggle Lyrics
+        // 2. Toggle Lyrics
         let lyricsTitle = showMenuBarLyrics ? "关闭状态栏歌词" : "开启状态栏歌词"
         let toggleItem = NSMenuItem(title: lyricsTitle, action: #selector(toggleLyrics), keyEquivalent: "")
-        toggleItem.tag = 101 // 设置 tag 以便后续查找更新
+        toggleItem.tag = 101
         menu.addItem(toggleItem)
         
-        // TouchBar (Optional)
+        // 3. TouchBar
         if TouchBarManager.shared.isFeatureAvailable {
             let tbItem = NSMenuItem(title: "开启/关闭 触控栏歌词", action: #selector(toggleTouchBar), keyEquivalent: "T")
             tbItem.keyEquivalentModifierMask = [.command, .shift]
             menu.addItem(tbItem)
         }
         
-        // Player Controls (Menu Display)
-        // 显示当前歌曲信息的不可点击项
+        // 4. Player Controls
         let infoItem = NSMenuItem(title: playerService.currentSong?.title ?? "Soloist", action: nil, keyEquivalent: "")
         infoItem.tag = 102
-        infoItem.isEnabled = false // 仅展示
+        infoItem.isEnabled = false
         menu.addItem(infoItem)
         
         let playItem = NSMenuItem(title: "播放/暂停", action: #selector(playPause), keyEquivalent: " ")
@@ -82,20 +133,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         menu.addItem(NSMenuItem.separator())
         
-        // System Features
+        // 5. System Features
         menu.addItem(NSMenuItem(title: "桌面悬浮歌词", action: #selector(toggleDesktopLyrics), keyEquivalent: ""))
         
         menu.addItem(NSMenuItem.separator())
         
-        // Lifecycle
+        // 6. Quit
         menu.addItem(NSMenuItem(title: "退出 Soloist", action: #selector(quitApp), keyEquivalent: "q"))
         
-        statusItem?.menu = menu
+        // ✨ 改动：保存到 self.contextMenu，而不是 statusItem.menu
+        self.contextMenu = menu
+        
+        // 初始更新菜单状态
+        if let item = menu.item(withTag: 101) {
+            let isOn = UserDefaults.standard.bool(forKey: "showMenuBarLyrics") // 这里简化读取，实际可以用变量
+            item.state = isOn ? .on : .off
+        }
     }
     
-    // 绑定 PlayerService 的数据变化
+    // MARK: - Bindings & Updates (保持不变)
+    
     func setupBindings() {
-        // 监听歌词变化、播放状态变化
         playerService.$currentLyric
             .combineLatest(playerService.$isPlaying, playerService.$currentSong)
             .sink { [weak self] (lyric, isPlaying, song) in
@@ -105,27 +163,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .store(in: &cancellables)
     }
     
-    // 更新状态栏上的文字 (Bar)
     func updateMenuBarAppearance(lyric: String, isPlaying: Bool) {
         guard let button = statusItem?.button else { return }
         
         if showMenuBarLyrics && isPlaying && !lyric.isEmpty {
-            // 有歌词：设置截断后的文字
-            // 使用等宽数字字体防止时间跳动时的抖动
             button.title = String(lyric.prefix(20))
             button.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
         } else {
-            // 无歌词/未开启：清空文字，图标会自动归位
             button.title = ""
         }
     }
     
-    // 更新下拉菜单里的内容 (Menu)
     func updateMenuContent(song: Song?) {
-        guard let menu = statusItem?.menu else { return }
-        
-        // 更新歌曲信息项
-        if let infoItem = menu.item(withTag: 102) {
+        // ✨ 改动：从 contextMenu 获取 item
+        if let infoItem = contextMenu.item(withTag: 102) {
             infoItem.title = song?.title ?? "Soloist"
         }
     }
@@ -133,49 +184,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Actions
     
     @objc func openMainWindow() {
-        // 激活应用并前置窗口
+        // 复用 toggle 逻辑，强制显示
+        let window = NSApp.windows.first(where: { $0.title == "Soloist" })
         NSApp.activate(ignoringOtherApps: true)
-        // 查找主窗口并显示
-        if let window = NSApp.windows.first(where: { $0.title == "Soloist" }) {
-            window.makeKeyAndOrderFront(nil)
-        }
+        window?.makeKeyAndOrderFront(nil)
     }
     
     @objc func toggleLyrics() {
         showMenuBarLyrics.toggle()
-        
-        // 更新菜单项文字
-        if let item = statusItem?.menu?.item(withTag: 101) {
+        // 更新菜单文字
+        if let item = contextMenu.item(withTag: 101) {
             item.title = showMenuBarLyrics ? "关闭状态栏歌词" : "开启状态栏歌词"
         }
-        
-        // 立即触发一次 UI 更新
         updateMenuBarAppearance(lyric: playerService.currentLyric, isPlaying: playerService.isPlaying)
     }
     
+    // 其他 Action 保持不变...
     @objc func toggleTouchBar() { TouchBarManager.shared.toggle() }
     @objc func playPause() { playerService.togglePlayPause() }
     @objc func prevSong() { playerService.previous() }
     @objc func nextSong() { playerService.next() }
     @objc func toggleDesktopLyrics() { DesktopLyricsController.shared.toggle() }
     @objc func quitApp() { NSApp.terminate(nil) }
-    
-    // MARK: - App Lifecycle
-        
-    // 点击红绿灯关闭窗口时，不退出 App
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        return false
-    }
-    
-    // 点击 Dock 图标时重新打开窗口
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
-            // 如果没有可见窗口，就让主窗口显示出来
-            for window in sender.windows {
-                window.makeKeyAndOrderFront(self)
-            }
-        }
-        return true
-    }
 }
 #endif
