@@ -24,6 +24,23 @@ class LocalLibraryService: ObservableObject {
     /// UI 层监听此属性以显示列表。
     @Published var songs: [Song] = []
     
+    // 记录当前正在访问的文件夹 URL，用于释放权限
+    private var accessingURL: URL?
+    
+    // 支持的格式列表
+    private let supportedExtensions = Set(["mp3", "flac", "m4a", "wav", "aiff"])
+    
+    // 析构时自动释放权限，防止内存/内核资源泄漏
+    deinit {
+        stopAccessing()
+    }
+
+    /// 辅助方法：停止访问当前文件夹
+    private func stopAccessing() {
+        accessingURL?.stopAccessingSecurityScopedResource()
+        accessingURL = nil
+    }
+    
     // MARK: - Initialization
     
     init() {
@@ -81,19 +98,24 @@ class LocalLibraryService: ObservableObject {
     ///   - url: 音乐文件夹 URL。
     ///   - forceScan: 是否强制重新扫描硬盘。
     private func startAccessing(url: URL, forceScan: Bool) {
+        // 1. 先停止旧的访问（如果有），防止泄漏
+        stopAccessing()
+        
+        // 2. 开始新的访问
         if url.startAccessingSecurityScopedResource() {
+            self.accessingURL = url // 记录下来，以便将来释放
             
-            // 🚀 策略 A (极速模式)：优先读缓存
+            // 策略 A (极速模式)：优先读缓存
             if !forceScan {
                 let cachedSongs = LibraryPersistenceService.loadLibrary()
                 if !cachedSongs.isEmpty {
                     self.songs = cachedSongs
                     print("⚡️ [LocalLibrary] 命中本地缓存，跳过硬盘扫描")
-                    return // 成功命中，直接结束
+                    return
                 }
             }
             
-            // 🐢 策略 B (慢速模式)：缓存未命中或强制刷新 -> 扫描物理硬盘
+            // 策略 B (慢速模式)：扫描物理硬盘
             scanDirectory(at: url)
             
         } else {
@@ -109,11 +131,9 @@ class LocalLibraryService: ObservableObject {
     ///
     /// - Parameter rootURL: 根目录 URL。
     func scanDirectory(at rootURL: URL) {
-        print("🐢 [LocalLibrary] 开始全盘扫描: \(rootURL.path)")
+        print("🐢 [LocalLibrary] 开始并发扫描: \(rootURL.path)")
         
         let fileManager = FileManager.default
-        
-        // 创建文件枚举器，跳过隐藏文件和包内容
         let enumerator = fileManager.enumerator(
             at: rootURL,
             includingPropertiesForKeys: [.isRegularFileKey],
@@ -121,68 +141,78 @@ class LocalLibraryService: ObservableObject {
         )
         
         Task {
-            var foundSongs: [Song] = []
-            var mp3URLs: [URL] = []
-            
-            // 1. 快速遍历：收集所有 .mp3 文件路径
-            // 这一步只读路径，不读内容，速度很快
+            // 1. 快速遍历：收集所有支持的音频文件路径
+            var targetURLs: [URL] = []
             while let fileURL = enumerator?.nextObject() as? URL {
-                if fileURL.pathExtension.lowercased() == "mp3" {
-                    mp3URLs.append(fileURL)
+                // ✨ 修改：检查是否在支持的格式列表中
+                if supportedExtensions.contains(fileURL.pathExtension.lowercased()) {
+                    targetURLs.append(fileURL)
                 }
             }
             
-            print("🔍 [LocalLibrary] 发现 \(mp3URLs.count) 个 MP3 文件，开始解析元数据...")
+            print("🔍 [LocalLibrary] 发现 \(targetURLs.count) 个音频文件，启动并发解析...")
             
-            // 2. 深度解析：逐个读取 ID3 和查找歌词
-            for fileURL in mp3URLs {
-                // 读取基础元数据 (Title, Artist, Embedded Lyrics)
-                // 注意：MetadataService 不再读取封面图片，这极大地加快了扫描速度
-                var song = await MetadataService.parse(url: fileURL)
+            // 2. ✨✨✨ 并发解析核心优化 ✨✨✨
+            // 使用 TaskGroup 同时开启多个任务解析元数据
+            let parsedSongs = await withTaskGroup(of: Song?.self, returning: [Song].self) { group in
                 
-                // --- 智能 LRC 匹配算法 ---
-                // 尝试在同级目录、Lyrics 子目录、lyrics 子目录查找同名 .lrc 文件
-                
-                let parentDir = fileURL.deletingLastPathComponent()
-                let baseName = fileURL.deletingPathExtension().lastPathComponent
-                
-                let candidates = [
-                    parentDir.appendingPathComponent("Lyrics").appendingPathComponent(baseName).appendingPathExtension("lrc"), // ./Lyrics/Song.lrc
-                    parentDir.appendingPathComponent("lyrics").appendingPathComponent(baseName).appendingPathExtension("lrc"), // ./lyrics/Song.lrc
-                    fileURL.deletingPathExtension().appendingPathExtension("lrc") // ./Song.lrc (同级目录)
-                ]
-                
-                var foundLrcURL: URL? = nil
-                
-                for candidate in candidates {
-                    if fileManager.fileExists(atPath: candidate.path) {
-                        foundLrcURL = candidate
-                        break // 找到一个就停止
+                for fileURL in targetURLs {
+                    group.addTask {
+                        // 2.1 解析元数据 (耗时操作)
+                        var song = await MetadataService.parse(url: fileURL)
+                        
+                        // 2.2 查找 LRC (文件操作)
+                        let parentDir = fileURL.deletingLastPathComponent()
+                        let baseName = fileURL.deletingPathExtension().lastPathComponent
+                        
+                        let candidates = [
+                            parentDir.appendingPathComponent("Lyrics").appendingPathComponent(baseName).appendingPathExtension("lrc"),
+                            parentDir.appendingPathComponent("lyrics").appendingPathComponent(baseName).appendingPathExtension("lrc"),
+                            fileURL.deletingPathExtension().appendingPathExtension("lrc")
+                        ]
+                        
+                        var foundLrcURL: URL? = nil
+                        for candidate in candidates {
+                            // 注意：这里直接使用 FileManager.default 是线程安全的
+                            if FileManager.default.fileExists(atPath: candidate.path) {
+                                foundLrcURL = candidate
+                                break
+                            }
+                        }
+                        
+                        if let lrc = foundLrcURL {
+                            // 更新 Song 对象
+                            song = Song(
+                                id: song.id,
+                                url: song.url,
+                                title: song.title,
+                                artist: song.artist,
+                                lrcURL: lrc,
+                                embeddedLyrics: song.embeddedLyrics
+                            )
+                        }
+                        return song
                     }
                 }
                 
-                // 如果找到了外部歌词文件，更新 Song 对象
-                if let lrc = foundLrcURL {
-                    song = Song(
-                        id: song.id,
-                        url: song.url,
-                        title: song.title,
-                        artist: song.artist,
-                        // 这里不再传入 artworkData，符合新模型定义
-                        lrcURL: lrc,
-                        embeddedLyrics: song.embeddedLyrics
-                    )
+                // 收集结果
+                var results: [Song] = []
+                for await song in group {
+                    if let song = song {
+                        results.append(song)
+                    }
                 }
                 
-                foundSongs.append(song)
+                // 按歌名排序
+                return results.sorted { $0.title < $1.title }
             }
             
-            // 3. 扫描完成，立即持久化到 library.json
-            LibraryPersistenceService.saveLibrary(songs: foundSongs)
+            // 3. 持久化
+            LibraryPersistenceService.saveLibrary(songs: parsedSongs)
             
-            // 4. 回到主线程更新 UI
+            // 4. 更新 UI
             await MainActor.run {
-                self.songs = foundSongs
+                self.songs = parsedSongs
                 print("✅ [LocalLibrary] 扫描完成，共加载 \(self.songs.count) 首歌")
             }
         }

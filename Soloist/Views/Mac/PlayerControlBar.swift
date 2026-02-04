@@ -156,7 +156,6 @@ struct PlayerControlBar: View {
                     help: "状态栏歌词"
                 ) {
                     showMenuBarLyrics.toggle()
-                    // 关键修复：强制通知 AppDelegate 刷新 (解决点击没反应的问题)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                         NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: nil)
                     }
@@ -198,7 +197,7 @@ struct PlayerControlBar: View {
 
 // MARK: - Subcomponents
 
-/// 纯文字风格的开关按钮 (保持"词"字的方块风格)
+/// 纯文字风格的开关按钮
 struct TextToggleButton: View {
     let text: String
     let isActive: Bool
@@ -208,13 +207,11 @@ struct TextToggleButton: View {
     var body: some View {
         Button(action: action) {
             Text(text)
-                // 保持原本的硬核风格：特粗字体，字号 10
                 .font(.system(size: 10, weight: .heavy))
                 .foregroundColor(isActive ? .accentColor : .secondary.opacity(0.6))
                 .frame(width: 16, height: 16)
                 .overlay(
                     RoundedRectangle(cornerRadius: 3)
-                        // ✨ 修复点：显式使用 Color.accentColor 和 Color.secondary
                         .stroke(isActive ? Color.accentColor : Color.secondary.opacity(0.6), lineWidth: 1.5)
                 )
         }

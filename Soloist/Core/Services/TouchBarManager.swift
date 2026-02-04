@@ -60,7 +60,7 @@ class TouchBarManager: NSObject {
         NSTouchBar.presentSystemModal(touchBar: touchBar, placement: 0)
         
         self.systemTouchBar = touchBar
-        print("🚀 [TouchBarManager] Touch Bar 已强制启动 (Private Mode)")
+        print("🚀 [TouchBarManager] Touch Bar 已启动 (Private Mode)")
         #endif
     }
     
@@ -87,7 +87,7 @@ class TouchBarManager: NSObject {
     }
 }
 
-// MARK: - 扩展与代理 (全部关进笼子)
+// MARK: - 扩展与代理
 
 #if PRIVATE_TOUCHBAR
 
@@ -154,12 +154,8 @@ struct TouchBarLyricsView: View {
                 .transition(.opacity.animation(.easeInOut(duration: 0.3)))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // ✨✨✨ 核心修复：监听视图消失，同步系统 X 按钮的状态 ✨✨✨
+
         .onDisappear {
-            // 判断逻辑：
-            // 1. 不是我们代码主动调用的 dismiss (isDismissingManually == false)
-            // 2. 且 App 内部记录的状态还是开启 (UserDefaults == true)
-            // -> 说明是用户按了 Touch Bar 上的系统 X 按钮
             if !TouchBarManager.shared.isDismissingManually && UserDefaults.standard.bool(forKey: "showTouchBarLyrics") {
                 
                 print("⚠️ 检测到 Touch Bar 被外部关闭，正在同步状态...")
@@ -170,10 +166,6 @@ struct TouchBarLyricsView: View {
                 // 2. 必须在主线程发送通知，通知 AppDelegate 和 UI 刷新
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: nil)
-                    
-                    // 清理引用 (此时 View 已经没了，只需要把 Manager 里的 systemTouchBar 置空)
-                    // 注意：这里不要调用 dismiss()，否则会触发递归逻辑，手动清理即可
-                    // 但为了简单，调用 dismiss() 因为有标志位保护也是安全的，不过这里没必要
                 }
             }
         }

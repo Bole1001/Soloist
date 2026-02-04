@@ -23,7 +23,7 @@ struct SoloistApp: App {
     
     // MARK: - State Management
     
-    // 依然保留，用于主窗口内部的逻辑
+    // 于主窗口内部的逻辑
     @StateObject private var playerService = AudioPlayerService.shared
     
     var body: some Scene {
