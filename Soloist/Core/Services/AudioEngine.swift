@@ -49,7 +49,7 @@ class AudioEngine: NSObject, AVAudioPlayerDelegate {
     ///
     /// - Parameter url: 本地音频文件的 URL。
     func play(url: URL) {
-        // 1. 防御性编程：播放新歌前，必须彻底停止上一首，释放资源
+        // 1. 播放新歌前，必须彻底停止上一首，释放资源
         stop()
         
         do {
@@ -74,7 +74,6 @@ class AudioEngine: NSObject, AVAudioPlayerDelegate {
             
         } catch {
             print("❌ [AudioEngine] 播放出错: \(error.localizedDescription)")
-            // 实际项目中，这里可能需要一个 onError 回调通知 UI 显示弹窗
         }
     }
 

@@ -7,7 +7,6 @@
 
 import Foundation
 import AVFoundation
-import SwiftUI // 引入 SwiftUI 是为了将来可能的 Image 转换扩展，虽然目前只返回 Data
 
 /// 封面加载器 (ArtworkLoader)
 ///
@@ -31,7 +30,7 @@ struct ArtworkLoader {
     static func loadArtwork(for song: Song) async -> Data? {
         // 1. 创建资源对象
         // AVURLAsset 初始化非常快，它只是指向文件，还没开始读取数据。
-        let asset = AVURLAsset(url: song.url)
+        let asset = AVURLAsset(url: song.url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: false])
         
         do {
             // 2. 异步加载元数据 (耗时操作)

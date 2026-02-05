@@ -94,7 +94,6 @@ struct LRCParser {
         }
         
         // 5. 排序返回
-        // 必须排序，因为有些 LRC 文件的标签不是按时间顺序写的（虽然很少见）
         return lyrics.sorted { $0.startTime < $1.startTime }
     }
 }

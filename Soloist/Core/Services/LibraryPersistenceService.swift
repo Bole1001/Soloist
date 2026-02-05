@@ -66,9 +66,7 @@ class LibraryPersistenceService {
             
             let data = try encoder.encode(songs)
             
-            // ✨ 关键优化：使用 .atomic 写入
-            // 这种方式会先写入一个临时文件，写完后再重命名替换原文件。
-            // 即使在写入过程中 App 崩溃，原有的 library.json 也不会损坏。
+            // 使用 .atomic 写入
             try data.write(to: url, options: .atomic)
             
             print("💾 [Persistence] 成功保存 \(songs.count) 首歌到本地数据库")
@@ -79,7 +77,7 @@ class LibraryPersistenceService {
     
     // MARK: - Load (Read)
     
-    /// 从硬盘加载歌曲列表 (查账)
+    /// 从硬盘加载歌曲列表 
     ///
     /// App 启动时调用此方法恢复上次的状态。
     ///

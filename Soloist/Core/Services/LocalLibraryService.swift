@@ -180,7 +180,7 @@ class LocalLibraryService: ObservableObject {
         print("🔄 [LocalLibrary] 触发手动刷新...")
         
         // 直接复用当前 URL 进行强制扫描
-        // 这会触发 TaskGroup 重新遍历硬盘 -> 更新内存 -> 写入 JSON
+        // 触发 TaskGroup 重新遍历硬盘 -> 更新内存 -> 写入 JSON
         scanDirectory(at: url)
     }
 }
