@@ -14,7 +14,7 @@ import Foundation
 /// **不直接存储**封面图片数据（Artwork），以保持极低的内存占用。
 ///
 /// - Note: 封面图片应使用 `ArtworkLoader` 根据 `url` 或 `id` 进行异步按需加载。
-struct Song: Identifiable, Hashable, Codable {
+struct Song: Identifiable, Hashable, Codable, Sendable {
     
     // MARK: - Properties
     
@@ -69,7 +69,7 @@ struct Song: Identifiable, Hashable, Codable {
     ///   - artist: 艺术家。若为 nil，则默认为 "Unknown Artist"。
     ///   - lrcURL: 外部歌词路径（可选）。
     ///   - embeddedLyrics: 内嵌歌词内容（可选）。
-    init(id: UUID = UUID(),
+    nonisolated init(id: UUID = UUID(),
          url: URL,
          title: String? = nil,
          artist: String? = nil,

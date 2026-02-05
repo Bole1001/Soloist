@@ -35,77 +35,103 @@ struct MacHomeView: View {
             // MARK: - Layer 1: 主导航界面
             NavigationSplitView {
                 // === 左侧：侧边栏 ===
-                List(selection: $selection) {
-                    Section {
+                ZStack {
+                    // 1. 背景层：通透的毛玻璃
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .ignoresSafeArea()
+                    
+                    // 2. 列表层
+                    List(selection: $selection) {
+                        // 唯一的导航入口：当前文件夹
                         NavigationLink(value: "all") {
-                            Label("所有音乐", systemImage: "music.note.list")
+                            Label {
+                                if let folder = libraryService.accessingURL {
+                                    Text(folder.lastPathComponent) // 显示文件夹名
+                                        .font(.system(size: 14, weight: .medium))
+                                } else {
+                                    Text("未选择文件夹") // 没选的时候显示这个
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundStyle(.secondary)
+                                }
+                            } icon: {
+                                // 使用文件夹图标，更有“本地文件”的感觉
+                                Image(systemName: "folder.fill")
+                                    .foregroundStyle(.blue)
+                            }
+                            .padding(.vertical, 6) //稍微增加一点高度，显得不那么挤
                         }
-                    } header: {
-                        Text("资料库").font(.headline)
+                        .listRowSeparator(.hidden) // 去掉分割线，更干净
                     }
+                    .listStyle(.sidebar)
+                    .scrollContentBackground(.hidden) // 去掉默认灰底
+                    .navigationSplitViewColumnWidth(min: 200, ideal: 220)
                 }
-                .listStyle(.sidebar)
-                .navigationSplitViewColumnWidth(min: 200, ideal: 240)
-                
-                // 侧边栏底部工具栏 (添加按钮 & 计数)
+                // 3. 底部工具栏 (保持功能性)
                 .safeAreaInset(edge: .bottom) {
-                    HStack {
-                        // 添加文件夹按钮
+                    HStack(spacing: 16) {
+                        // 添加文件夹
                         Button(action: { openFolderPicker() }) {
-                            Image(systemName: "plus").fontWeight(.bold)
+                            Image(systemName: "plus")
+                                .font(.system(size: 14, weight: .semibold))
                         }
-                        .buttonStyle(.borderless)
-                        .foregroundColor(.secondary)
-                        .help("添加音乐文件夹")
+                        .buttonStyle(.plain)
+                        .foregroundColor(.primary.opacity(0.8))
+                        .help("更换/添加音乐文件夹")
                         
                         Spacer()
                         
-                        // 歌曲数量统计
-                        Text("\(libraryService.songs.count) 首歌")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        // 简单的计数
+                        if !libraryService.songs.isEmpty {
+                            Text("\(libraryService.songs.count) 首歌")
+                                .font(.system(size: 11, design: .monospaced)) // 用等宽字体显得更有极客感
+                                .foregroundColor(.secondary.opacity(0.8))
+                        }
                         
                         Spacer()
                         
-                        // 占位符以保持布局平衡
-                        Color.clear.frame(width: 14, height: 14)
+                        // 刷新
+                        Button(action: { libraryService.refreshLibrary() }) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.primary.opacity(0.8))
+                        .help("刷新当前文件夹")
                     }
-                    .padding(.vertical, 12)
-                    .padding(.horizontal, 16)
-                    .background(.ultraThinMaterial)
-                    .overlay(Divider(), alignment: .top)
+                    .padding(.vertical, 14)
+                    .padding(.horizontal, 20)
+                    .background(.ultraThinMaterial) // 底部也是毛玻璃
+                    .overlay(Divider().opacity(0.2), alignment: .top) // 极淡的分割线
                 }
                 
             } detail: {
-                // === 右侧：详情内容区域 ===
+                // === 右侧：详情内容区域 (保持原样) ===
                 ZStack {
-                    // 1. 动态毛玻璃背景层 (随封面变化)
+                    // 背景
                     HomeBackgroundView(artworkData: currentArtworkData)
                     
-                    // 2. 内容层 (列表 + 空状态)
+                    // 内容
                     VStack(spacing: 0) {
                         if libraryService.songs.isEmpty {
-                            // 空状态视图
+                            // 空状态
                             VStack(spacing: 16) {
-                                Image(systemName: "music.note.list")
+                                Image(systemName: "music.note.house.fill")
                                     .font(.system(size: 60))
                                     .foregroundStyle(.tertiary)
-                                Text("暂无音乐").font(.title2).fontWeight(.medium)
-                                Text("点击左下角的 + 号添加文件夹")
+                                Text("暂无本地音乐").font(.title2).fontWeight(.medium)
+                                Text("请点击左下角 + 号选择文件夹")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .shadow(color: .black.opacity(0.2), radius: 1, x: 0, y: 1)
                         } else {
-                            // 歌曲列表视图
+                            // 歌曲列表
                             List {
                                 ForEach(libraryService.songs) { song in
                                     SongListRow(
                                         song: song,
-                                        
                                         isPlaying: playerService.currentSong?.id == song.id,
-                                        
                                         onPlay: {
                                             playerService.play(song: song, playlist: libraryService.songs)
                                         }
@@ -114,21 +140,25 @@ struct MacHomeView: View {
                                 }
                             }
                             .listStyle(.inset)
-                            // 隐藏默认白色背景，透出下方的毛玻璃效果
                             .scrollContentBackground(.hidden)
+                            .safeAreaInset(edge: .bottom) {
+                                if playerService.currentSong != nil {
+                                    Color.clear.frame(height: 80)
+                                }
+                            }
                         }
-                        
-                        // 底部播放控制条 (悬浮在列表下方)
-                        if playerService.currentSong != nil {
-                            PlayerControlBar(
-                                playerService: playerService,
-                                showLyrics: $showLyricsPage
-                            )
-                            .frame(height: 80)
-                            .background(.ultraThinMaterial)
-                            .overlay(Divider().opacity(0.5), alignment: .top)
-                            .transition(.move(edge: .bottom))
-                        }
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    if playerService.currentSong != nil {
+                        PlayerControlBar(
+                            playerService: playerService,
+                            showLyrics: $showLyricsPage
+                        )
+                        .frame(height: 80)
+                        .background(.ultraThinMaterial)
+                        .overlay(Divider().opacity(0.5), alignment: .top)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
             }
@@ -138,7 +168,8 @@ struct MacHomeView: View {
             if showLyricsPage {
                 LyricsFullView(
                     playerService: playerService,
-                    showLyrics: $showLyricsPage
+                    showLyrics: $showLyricsPage,
+                    artworkData: currentArtworkData
                 )
                 .transition(.move(edge: .bottom))
                 .zIndex(1) // 确保层级最高
