@@ -25,7 +25,7 @@ struct ScrollingLyricsView: View {
     var activeFontWeight: Font.Weight = .bold
     var alignment: HorizontalAlignment = .leading
     
-    // ✨ 1. 计算属性：根据当前时间找到正在播放的那一行 ID
+    // 1. 计算属性：根据当前时间找到正在播放的那一行 ID
     // 这比对比文本 (String) 更准确，能区分内容相同的重复歌词
     private var activeLineID: LyricLine.ID? {
         // 找到最后一句“起始时间 <= 当前时间”的歌词
@@ -48,7 +48,7 @@ struct ScrollingLyricsView: View {
                         LazyVStack(alignment: alignment, spacing: 30) {
                             ForEach(playerService.lyrics) { line in
                                 Text(line.text)
-                                    // ✨ 2. 修改：使用 ID 对比来判断高亮
+                                    // 2. 使用 ID 对比来判断高亮
                                     .font(.system(size: line.id == activeLineID ? activeFontSize : inactiveFontSize,
                                                   weight: line.id == activeLineID ? activeFontWeight : .medium))
                                     .foregroundColor(line.id == activeLineID ? .white : .white.opacity(0.4))
@@ -64,7 +64,7 @@ struct ScrollingLyricsView: View {
                         .padding(.vertical, 300) // 保持原有留白
                         .padding(.horizontal, 20)
                     }
-                    // ✨ 3. 视觉优化：添加渐变遮罩 (Mask)
+                    // 3. 视觉优化：添加渐变遮罩 (Mask)
                     // 让歌词在顶部和底部呈现“淡入淡出”效果，而不是生硬消失
                     .mask(
                         LinearGradient(
@@ -78,7 +78,7 @@ struct ScrollingLyricsView: View {
                             endPoint: .bottom
                         )
                     )
-                    // ✨ 4. 修改：监听 activeLineID 变化来驱动滚动
+                    // 4. 监听 activeLineID 变化来驱动滚动
                     .onChange(of: activeLineID) {
                         if let targetID = activeLineID {
                             withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {

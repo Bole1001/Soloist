@@ -84,16 +84,15 @@ class LyricsManager {
     }
     
     // MARK: - Private Helpers
-    
+        
     /// 将歌词内容保存到本地文件系统
     ///
-    /// 会在音频文件同级目录下创建一个 `Lyrics` 文件夹用于存放。
-    ///
-    /// - Parameters:
-    ///   - content: 歌词全文内容
-    ///   - song: 原始歌曲对象
-    ///   - completion: 保存成功后，返回带有新 lrcURL 的 Song 对象
+    /// - macOS: 保存到音频同级目录的 Lyrics 文件夹中。
+    /// - iOS: ❌ 不保存。用户决定手动管理，此处仅做透传，不执行写入操作。
     private func saveLrcFile(content: String, for song: Song, completion: @escaping (Song) -> Void) {
+        
+        // 💻 macOS 专属逻辑：执行保存
+        #if os(macOS)
         let fileManager = FileManager.default
         
         // 构建路径：./Lyrics/SongName.lrc
@@ -108,16 +107,17 @@ class LyricsManager {
                 try fileManager.createDirectory(at: lyricsFolderURL, withIntermediateDirectories: true, attributes: nil)
             }
             
-            // 写入文件 (原子写入，防止数据损坏)
+            // 写入文件
             try content.write(to: lrcURL, atomically: true, encoding: .utf8)
+            print("💾 [LyricsManager] 歌词已保存到本地: \(lrcURL.lastPathComponent)")
             
-            // 生成新的 Song 实例
+            // 生成带有新 LRC 路径的 Song 对象
             let updatedSong = Song(
                 id: song.id,
                 url: song.url,
                 title: song.title,
                 artist: song.artist,
-                lrcURL: lrcURL, // 更新歌词路径
+                lrcURL: lrcURL, // ✅ 更新路径
                 embeddedLyrics: song.embeddedLyrics
             )
             
@@ -125,6 +125,17 @@ class LyricsManager {
             
         } catch {
             print("⚠️ [LyricsManager] 歌词保存失败: \(error)")
+            // 保存失败也返回原对象，不影响显示
+            completion(song)
         }
+
+        // 📱 iOS 逻辑：直接放弃保存
+        #else
+        // 不做任何文件操作，直接把原来的 song 对象还回去。
+        // 这样 UI 依然能显示刚才下载的歌词（因为它是从内存传过去的），
+        // 但下次重启 App 后，这首歌依然没有关联的本地 LRC 文件。
+        print("📱 [LyricsManager] iOS 端跳过自动保存，仅在内存中显示")
+        completion(song)
+        #endif
     }
 }

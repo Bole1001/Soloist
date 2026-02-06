@@ -47,7 +47,14 @@ class LocalLibraryService: ObservableObject {
     
     func scanAndSavePermission(at url: URL) {
         do {
-            let bookmarkData = try url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+            // MARK: - 修改点 1：跨平台书签选项适配
+            #if os(macOS)
+            let options: URL.BookmarkCreationOptions = .withSecurityScope
+            #else
+            let options: URL.BookmarkCreationOptions = []
+            #endif
+            
+            let bookmarkData = try url.bookmarkData(options: options, includingResourceValuesForKeys: nil, relativeTo: nil)
             UserDefaults.standard.set(bookmarkData, forKey: "UserMusicFolderBookmark")
         } catch {
             print("❌ [LocalLibrary] 保存权限失败: \(error)")
@@ -58,7 +65,15 @@ class LocalLibraryService: ObservableObject {
     func restorePermission() {
         guard let bookmarkData = UserDefaults.standard.data(forKey: "UserMusicFolderBookmark") else { return }
         var isStale = false
-        if let url = try? URL(resolvingBookmarkData: bookmarkData, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &isStale), !isStale {
+        
+        // MARK: - 修改点 2：跨平台解析选项适配
+        #if os(macOS)
+        let options: URL.BookmarkResolutionOptions = .withSecurityScope
+        #else
+        let options: URL.BookmarkResolutionOptions = []
+        #endif
+        
+        if let url = try? URL(resolvingBookmarkData: bookmarkData, options: options, relativeTo: nil, bookmarkDataIsStale: &isStale), !isStale {
             startAccessing(url: url, forceScan: false)
         }
     }
@@ -182,5 +197,57 @@ class LocalLibraryService: ObservableObject {
         // 直接复用当前 URL 进行强制扫描
         // 触发 TaskGroup 重新遍历硬盘 -> 更新内存 -> 写入 JSON
         scanDirectory(at: url)
+    }
+    
+    // MARK: - App Sandbox Logic (App 本地存储)
+        
+    /// 获取 App 沙盒内的 Documents 目录
+    /// 这里是 iOS/macOS 存放用户长期数据的标准位置
+    var documentsDirectory: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    }
+    
+    /// 导入歌曲到 App 本地沙盒
+    ///
+    /// - Parameter sourceURLs: 用户在文件选择器里选中的外部文件 URL
+    func importSongs(from sourceURLs: [URL]) {
+        let fileManager = FileManager.default
+        let destFolder = documentsDirectory // 直接存到 Documents 根目录，或者你可以建个子文件夹 "Music"
+        
+        // 1. 遍历用户选中的文件
+        for srcURL in sourceURLs {
+            // 安全访问外部文件 (iOS 必须步骤)
+            let accessing = srcURL.startAccessingSecurityScopedResource()
+            
+            defer {
+                if accessing { srcURL.stopAccessingSecurityScopedResource() }
+            }
+            
+            // 2. 构建目标路径
+            let destURL = destFolder.appendingPathComponent(srcURL.lastPathComponent)
+            
+            do {
+                // 3. 如果文件已存在，先删除（或者你可以选择跳过）
+                if fileManager.fileExists(atPath: destURL.path) {
+                    try fileManager.removeItem(at: destURL)
+                }
+                
+                // 4. 复制文件 (Copy)
+                try fileManager.copyItem(at: srcURL, to: destURL)
+                print("✅ [Import] 成功导入: \(srcURL.lastPathComponent)")
+                
+            } catch {
+                print("❌ [Import] 导入失败: \(error.localizedDescription)")
+            }
+        }
+        
+        // 5. 导入完成后，自动刷新显示 Documents 目录的内容
+        scanDirectory(at: documentsDirectory)
+    }
+    
+    /// 专门扫描 App 本地目录的方法
+    func loadLocalDocuments() {
+        // Documents 目录不需要申请权限，直接扫
+        scanDirectory(at: documentsDirectory)
     }
 }

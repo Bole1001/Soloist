@@ -26,7 +26,6 @@ struct DesktopLyricsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // 使用极低透明度的背景以拦截鼠标事件，支持拖拽操作
-        // 注意：纯 Color.clear 会导致鼠标事件直接穿透窗口，无法进行拖动
         .background(Color.black.opacity(0.01))
     }
 }

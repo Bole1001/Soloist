@@ -57,9 +57,9 @@ struct ArtworkLoader {
                 }
             }
         } catch {
-            // 生产环境中，通常不需要把这个错误抛给 UI，返回 nil 显示占位图即可。
-            // 这里的 print 仅用于开发调试。
+            #if DEBUG
             print("❌ [ArtworkLoader] 读取封面失败: \(song.title) - \(error)")
+            #endif
         }
         
         return nil

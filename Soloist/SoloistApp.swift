@@ -22,8 +22,7 @@ struct SoloistApp: App {
     #endif
     
     // MARK: - State Management
-    
-    // 于主窗口内部的逻辑
+    // 全局唯一的播放服务，生命周期跟随 App
     @StateObject private var playerService = AudioPlayerService.shared
     
     var body: some Scene {
@@ -35,6 +34,7 @@ struct SoloistApp: App {
         Window("Soloist", id: "MainWindow") {
             MacHomeView()
                 .background(VisualEffect().ignoresSafeArea())
+                .environmentObject(playerService) // 注入环境变量
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
@@ -45,11 +45,8 @@ struct SoloistApp: App {
         #else
         
         WindowGroup {
-            if #available(iOS 16.0, *) {
-                Text("iOS 端主页开发中...")
-            } else {
-                Text("iOS 端主页开发中...")
-            }
+            IphoneHomeView()
+                .environmentObject(playerService)
         }
         
         #endif

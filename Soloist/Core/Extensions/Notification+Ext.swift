@@ -9,6 +9,7 @@ import Foundation
 
 extension Notification.Name {
     
+    #if os(macOS)
     // MARK: - Custom Notifications
     
     /// 切换桌面歌词显示状态通知
@@ -17,4 +18,5 @@ extension Notification.Name {
     /// **发送者**: `MacHomeView` (菜单栏点击) 或 `AppDelegate` (快捷键触发)。
     /// **接收者**: `DesktopLyricsController` 监听此通知以执行 `toggle()` 操作。
     static let toggleDesktopLyrics = Notification.Name("toggleDesktopLyrics")
+    #endif
 }
