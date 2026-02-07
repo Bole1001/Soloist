@@ -30,7 +30,10 @@
 				Core/Services/PlaylistManager.swift,
 				Core/Services/SystemMediaHandler.swift,
 				SoloistApp.swift,
+				Views/IOS/IOSBackgroundView.swift,
 				Views/IOS/IphoneHomeView.swift,
+				Views/IOS/LyricsFullView.swift,
+				Views/IOS/MiniPlayerBar.swift,
 				Views/Shared/ArtworkBackgroundView.swift,
 				Views/Shared/ArtworkView.swift,
 				Views/Shared/PlaybackControls.swift,
@@ -42,7 +45,10 @@
 		EE6E4A5F2F35DE1D0094043F /* Exceptions for "Soloist" folder in "Soloist" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Views/IOS/IOSBackgroundView.swift,
 				Views/IOS/IphoneHomeView.swift,
+				Views/IOS/LyricsFullView.swift,
+				Views/IOS/MiniPlayerBar.swift,
 			);
 			target = EE5BDBDF2F29BE4E0055F4D8 /* Soloist */;
 		};
