@@ -7,6 +7,7 @@
 
 import Foundation
 import Combine
+import SwiftUI
 
 /// 本地音乐库服务 (LocalLibraryService)
 ///
@@ -30,8 +31,13 @@ class LocalLibraryService: ObservableObject {
     // MARK: - Lifecycle
     
     init() {
-        restorePermission()
-    }
+            #if os(macOS)
+            restorePermission()
+            #else
+            // iOS 启动时，直接扫描 Documents 目录 (加载 iTunes 共享或上次导入的文件)
+            loadLocalDocuments()
+            #endif
+        }
     
     /// 析构时自动释放权限，防止资源泄漏
     deinit {
@@ -180,6 +186,37 @@ class LocalLibraryService: ObservableObject {
             }
         }
     }
+    
+    // MARK: - Deletion Logic
+        
+        /// 删除指定歌曲 (同时删除关联的 LRC 文件)
+        func deleteSongs(at offsets: IndexSet) {
+            let fileManager = FileManager.default
+            
+            offsets.forEach { index in
+                let song = songs[index]
+                
+                do {
+                    // 1. 删除音频文件
+                    try fileManager.removeItem(at: song.url)
+                    print("🗑️ 已删除音频: \(song.title)")
+                    
+                    // 2. 尝试删除关联的歌词文件 (如果有)
+                    if let lrcURL = song.lrcURL {
+                        try? fileManager.removeItem(at: lrcURL)
+                        print("🗑️ 已删除关联歌词")
+                    }
+                } catch {
+                    print("❌ 删除失败: \(error.localizedDescription)")
+                }
+            }
+            
+            // 3. 从内存数组中移除
+            songs.remove(atOffsets: offsets)
+            
+            // 4. 更新持久化缓存 (可选)
+            LibraryPersistenceService.saveLibrary(songs: songs)
+        }
     
     // MARK: - Public Actions
         

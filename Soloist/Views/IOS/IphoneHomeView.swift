@@ -42,11 +42,13 @@ struct IphoneHomeView: View {
                 }
                 .navigationTitle("本地音乐")
                 .toolbar {
+                    // 左侧：手动刷新 (应对 iTunes 传文件后不显示的极少数情况)
                     ToolbarItem(placement: .topBarLeading) {
-                        Button(action: { libraryService.refreshLibrary() }) {
+                        Button(action: { libraryService.loadLocalDocuments() }) {
                             Image(systemName: "arrow.triangle.2.circlepath")
                         }
                     }
+                    // 右侧：导入按钮
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(action: { showFileImporter = true }) {
                             Image(systemName: "plus")
@@ -81,7 +83,12 @@ struct IphoneHomeView: View {
         // 动画与生命周期
         .animation(.easeInOut(duration: 0.3), value: showLyricsPage)
         .animation(.spring(response: 0.5, dampingFraction: 0.8), value: playerService.currentSong)
-        .onAppear { libraryService.loadLocalDocuments() }
+        
+        // 视图可见时自动扫描沙盒 (应对 iTunes 文件共享)
+        .onAppear {
+            libraryService.loadLocalDocuments()
+        }
+        
         .task(id: playerService.currentSong?.id) {
             if let song = playerService.currentSong {
                 currentArtworkData = await ArtworkLoader.loadArtwork(for: song)
@@ -89,9 +96,11 @@ struct IphoneHomeView: View {
                 currentArtworkData = nil
             }
         }
+        
+        // 允许导入 音频 和 纯文本(歌词)
         .fileImporter(
             isPresented: $showFileImporter,
-            allowedContentTypes: [.audio],
+            allowedContentTypes: [.audio, UTType(filenameExtension: "lrc") ?? .plainText], // 允许 mp3 和 lrc/txt
             allowsMultipleSelection: true
         ) { result in
             if case .success(let urls) = result {
@@ -125,6 +134,10 @@ struct IphoneHomeView: View {
                 )
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
+            }
+            // 增加左滑删除功能
+            .onDelete { indexSet in
+                libraryService.deleteSongs(at: indexSet)
             }
         }
         .listStyle(.plain)

@@ -9,12 +9,14 @@
 /* Begin PBXFileReference section */
 		EE5BDBE02F29BE4E0055F4D8 /* Soloist.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Soloist.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		EE6E4A442F35C3C60094043F /* Soloist-iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Soloist-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		EE93907B2F36E9D700D9AF37 /* Soloist-iOS-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Soloist-iOS-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
 		EE6E4A502F35CFC20094043F /* Exceptions for "Soloist" folder in "Soloist-iOS" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Assets.xcassets,
 				"Core/Extensions/Notification+Ext.swift",
 				Core/Models/LyricLine.swift,
 				Core/Models/Song.swift,
@@ -87,6 +89,7 @@
 		EE5BDBD72F29BE4E0055F4D8 = {
 			isa = PBXGroup;
 			children = (
+				EE93907B2F36E9D700D9AF37 /* Soloist-iOS-Info.plist */,
 				EE5BDBE22F29BE4E0055F4D8 /* Soloist */,
 				EE5BDBE12F29BE4E0055F4D8 /* Products */,
 			);
@@ -427,6 +430,9 @@
 				DEVELOPMENT_TEAM = Y3K7SJ5LV7;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Soloist-iOS-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Soloist;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -465,6 +471,9 @@
 				DEVELOPMENT_TEAM = Y3K7SJ5LV7;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Soloist-iOS-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Soloist;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
