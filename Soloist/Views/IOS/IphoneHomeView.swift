@@ -133,7 +133,8 @@ struct IphoneHomeView: View {
                     onPlay: { playerService.play(song: song, playlist: libraryService.songs) }
                 )
                 .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
+                .listRowSeparatorTint(.white.opacity(0.2))
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
             }
             // 增加左滑删除功能
             .onDelete { indexSet in
@@ -142,6 +143,7 @@ struct IphoneHomeView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .background(Color.clear)
         .safeAreaInset(edge: .bottom) {
             if playerService.currentSong != nil {
                 Color.clear.frame(height: 80)

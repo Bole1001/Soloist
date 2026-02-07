@@ -25,93 +25,87 @@ struct SongListRow: View {
     // MARK: - Local State
     @State private var rowArtwork: Data? = nil
     
-    // ✨ 1. 状态隔离：只有 macOS 需要记录悬停状态
+    // 记录悬停状态 (macOS)
     #if os(macOS)
     @State private var isHovering: Bool = false
     #endif
     
-    // ✨ 2. 逻辑计算属性：判断何时显示遮罩层
+    // 判断何时显示遮罩层
     private var shouldShowOverlay: Bool {
         #if os(macOS)
         return isPlaying || isHovering
         #else
-        return isPlaying // iOS 上只有“正在播放”时才显示遮罩
+        return isPlaying
         #endif
     }
     
     var body: some View {
-        HStack(spacing: 14) {
-            
-            // MARK: - 1. Artwork Section
-            ZStack {
-                // A. 封面图
-                if let data = rowArtwork, let image = SongRowImage(data: data) {
-                    #if os(macOS)
-                    Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
-                    #else
-                    Image(uiImage: image).resizable().aspectRatio(contentMode: .fill)
-                    #endif
-                } else {
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
-                        .overlay(Image(systemName: "music.note").foregroundColor(.secondary))
-                }
+        Button(action: onPlay) {
+            HStack(spacing: 14) {
                 
-                // B. 遮罩层 (根据平台逻辑显示)
-                if shouldShowOverlay {
-                    Color.black.opacity(0.4)
-                        .transition(.opacity)
+                // MARK: - 1. Artwork Section
+                ZStack {
+                    if let data = rowArtwork, let image = SongRowImage(data: data) {
+                        #if os(macOS)
+                        Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+                        #else
+                        Image(uiImage: image).resizable().aspectRatio(contentMode: .fill)
+                        #endif
+                    } else {
+                        Rectangle()
+                            .fill(.ultraThinMaterial)
+                            .overlay(Image(systemName: "music.note").foregroundColor(.secondary))
+                    }
                     
-                    // 图标逻辑区分
-                    #if os(macOS)
-                    // Mac: 播放显示喇叭，未播放但悬停显示播放键
-                    Image(systemName: isPlaying ? "speaker.wave.3.fill" : "play.fill")
-                        .font(.title2)
-                        .foregroundColor(.white)
-                        .shadow(radius: 2)
-                    #else
-                    // iOS: 只显示喇叭 (因为 iOS 没有悬停状态，不需要 play.fill)
-                    Image(systemName: "speaker.wave.3.fill")
-                        .font(.title2)
-                        .foregroundColor(.white)
-                        .shadow(radius: 2)
-                    #endif
+                    if shouldShowOverlay {
+                        Color.black.opacity(0.4)
+                            .transition(.opacity)
+                        
+                        #if os(macOS)
+                        Image(systemName: isPlaying ? "speaker.wave.3.fill" : "play.fill")
+                            .font(.title2)
+                            .foregroundColor(.white)
+                            .shadow(radius: 2)
+                        #else
+                        Image(systemName: "speaker.wave.3.fill")
+                            .font(.title2)
+                            .foregroundColor(.white)
+                            .shadow(radius: 2)
+                        #endif
+                    }
                 }
-            }
-            .frame(width: 48, height: 48)
-            .cornerRadius(8)
-            .task(id: song.id) {
-                if rowArtwork == nil {
-                    rowArtwork = await ArtworkLoader.loadArtwork(for: song)
+                .frame(width: 48, height: 48)
+                .cornerRadius(8)
+                .task(id: song.id) {
+                    if rowArtwork == nil {
+                        rowArtwork = await ArtworkLoader.loadArtwork(for: song)
+                    }
                 }
-            }
-            
-            // MARK: - 2. Metadata
-            VStack(alignment: .leading, spacing: 4) {
-                Text(song.title)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundColor(isPlaying ? .blue : .primary)
-                    .lineLimit(1)
                 
-                Text(song.artist)
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
+                // MARK: - 2. Metadata
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(song.title)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(isPlaying ? .blue : .primary)
+                        .lineLimit(1)
+                    
+                    Text(song.artist)
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                
+                Spacer()
             }
-            
-            Spacer()
+            .padding(.vertical, 6)
+            .padding(.horizontal, 12)
+            // 扩大点击区域，确保点击空白处也能触发
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 12)
-        .contentShape(Rectangle()) // 扩大点击区域
+        // 应用自定义样式，处理背景色和按压动画
+        .buttonStyle(SongRowButtonStyle(isPlaying: isPlaying, isHovering: isHoveringForStyle))
         
-        // MARK: - Interaction & Styling
-        // 背景高亮逻辑也做区分
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(backgroundFill)
-        )
-        // ✨ 3. 修饰符隔离：只在 Mac 上添加悬停监听
+        // 保持 macOS 的悬停逻辑
         #if os(macOS)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
@@ -119,23 +113,51 @@ struct SongListRow: View {
             }
         }
         #endif
-        .onTapGesture {
-            onPlay()
-        }
     }
     
-    // ✨ 4. 辅助属性：背景填充色逻辑
-    private var backgroundFill: Color {
+    // 辅助计算属性：为了让 iOS 编译通过
+    private var isHoveringForStyle: Bool {
+        #if os(macOS)
+        return isHovering
+        #else
+        return false
+        #endif
+    }
+}
+
+// MARK: - Custom Button Style
+/// 专门用于处理列表行的点击态、播放态和悬停态
+struct SongRowButtonStyle: ButtonStyle {
+    let isPlaying: Bool
+    let isHovering: Bool
+    
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(backgroundColor(isPressed: configuration.isPressed))
+            )
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    }
+    
+    private func backgroundColor(isPressed: Bool) -> Color {
+        // 1. 播放中
         if isPlaying {
             return Color.accentColor.opacity(0.1)
         }
         
-        #if os(macOS)
+        // 2. 按压 (iOS/Mac 通用)
+        if isPressed {
+            return Color.gray.opacity(0.2) // 按下时的深色反馈
+        }
+        
+        // 3. 鼠标悬停
         if isHovering {
             return Color.gray.opacity(0.1)
         }
-        #endif
         
+        // 4. 默认透明
         return Color.clear
     }
 }

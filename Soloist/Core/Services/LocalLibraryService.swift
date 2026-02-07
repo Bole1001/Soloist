@@ -35,7 +35,7 @@ class LocalLibraryService: ObservableObject {
             restorePermission()
             #else
             // iOS 启动时，直接扫描 Documents 目录 (加载 iTunes 共享或上次导入的文件)
-            loadLocalDocuments()
+            //loadLocalDocuments()
             #endif
         }
     

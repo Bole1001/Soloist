@@ -15,9 +15,10 @@ struct LyricsFullView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // 1. 背景层 (复用背景组件，保持统一)
+                // 1. 背景层
                 IOSBackgroundView(artworkData: artworkData)
-                    .overlay(.regularMaterial) // 叠加一层磨砂，让背景更深沉
+                    .overlay(.ultraThinMaterial)
+                    .overlay(Color.black.opacity(0.45))
                 
                 // 2. 内容层
                 VStack(spacing: 30) {
@@ -54,15 +55,15 @@ struct LyricsFullView: View {
                             .foregroundColor(.white.opacity(0.7))
                     }
                     
-                    // 歌词滚动区 (复用 Shared 组件)
+                    // 歌词滚动区
                     ScrollingLyricsView(
                         playerService: playerService,
-                        activeFontSize: 28, // 手机上字号调小一点
+                        activeFontSize: 28,
                         inactiveFontSize: 18,
                         alignment: .center
                     )
                     
-                    // 底部控制区 (复用 Shared 组件)
+                    // 底部控制区
                     PlaybackControls(playerService: playerService, size: 40)
                         .foregroundColor(.white)
                         .padding(.bottom, 50)
