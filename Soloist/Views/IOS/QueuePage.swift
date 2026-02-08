@@ -7,102 +7,99 @@
 
 import SwiftUI
 
+/// 专门用于 MiniPlayer 弹出的简易播放列表视图
 struct QueuePage: View {
     @EnvironmentObject var playerService: AudioPlayerService
-    // 接收封面数据用于背景模糊
-    let artworkData: Data?
-    
-    // 自动滚动到当前播放歌曲
-    @State private var didScrollToCurrent = false
     
     var body: some View {
-        ZStack {
-            // 1. 背景层
-            IOSBackgroundView(artworkData: artworkData)
-            
-            NavigationStack {
-                ScrollViewReader { proxy in
-                    List {
-                        // MARK: - 播放队列
-                        Section {
-                            if playerService.queue.isEmpty {
-                                emptyQueueView
-                            } else {
-                                // 必须直接遍历 queue 数组才能支持 onMove
-                                ForEach(playerService.queue) { song in
-                                    let isCurrent = playerService.currentSong?.id == song.id
-                                    
-                                    SongListRow(
-                                        song: song,
-                                        isPlaying: isCurrent,
-                                        onPlay: {
-                                            // 点击队列里的歌，直接播放那一首
-                                            playerService.play(song: song, playlist: playerService.queue)
-                                        }
-                                    )
-                                    .id(song.id) // 绑定 ID 以便自动滚动
-                                    // 给正在播放的行加个特殊的背景
-                                    .listRowBackground(
-                                        isCurrent ? Color.white.opacity(0.15) : Color.clear
-                                    )
-                                    .listRowSeparatorTint(.white.opacity(0.2))
-                                }
-                                .onDelete(perform: playerService.removeSongs)
-                                .onMove(perform: playerService.moveSongs)
+        NavigationStack {
+            List {
+                // 1. 顶部控制区 (类似网易云的“播放全部/循环模式”)
+                Section {
+                    HStack {
+                        // 循环模式切换按钮
+                        Button(action: { playerService.toggleLoop() }) {
+                            HStack {
+                                Image(systemName: playerService.isLoopMode ? "repeat.1" : "repeat")
+                                Text(playerService.isLoopMode ? "单曲循环" : "列表循环")
                             }
-                        } header: {
-                            headerView
-                        }
-                    }
-                    .listStyle(.insetGrouped)
-                    .scrollContentBackground(.hidden)
-                    .navigationTitle("待播清单")
-                    .toolbar {
-                        // 系统的编辑按钮 (点击进入排序/删除模式)
-                        EditButton()
-                    }
-                    // 进页面时自动滚到正在播放的那首歌
-                    .onAppear {
-                        if let currentId = playerService.currentSong?.id, !didScrollToCurrent {
-                            // 稍微延迟一下等待 List 渲染
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                withAnimation {
-                                    proxy.scrollTo(currentId, anchor: .center)
-                                }
-                                didScrollToCurrent = true
+                            .font(.subheadline)
+                            .foregroundStyle(playerService.isLoopMode ? .blue : .primary)                        }
+                        
+                        Spacer()
+                        
+                        // 随机播放
+                        Button(action: { playerService.toggleShuffle() }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "shuffle")
+                                Text(playerService.isShuffleMode ? "随机播放" : "顺序播放")
                             }
+                            .font(.subheadline)
+                            // 激活时变色，状态更清晰
+                            .foregroundStyle(playerService.isShuffleMode ? .blue : .primary)
                         }
+                        .buttonStyle(.plain)
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                }
+                
+                // 2. 歌曲列表 (复用逻辑)
+                Section {
+                    if playerService.queue.isEmpty {
+                        Text("队列为空")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(playerService.queue) { song in
+                            let isCurrent = playerService.currentSong?.id == song.id
+                            
+                            HStack(spacing: 12) {
+                                // 正在播放的动态图标
+                                if isCurrent {
+                                    Image(systemName: "chart.bar.fill")
+                                        .foregroundStyle(.blue)
+                                        .font(.caption)
+                                } else {
+                                    // 序号或空位
+                                    Text("\(playerService.queue.firstIndex(where: {$0.id == song.id})! + 1)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 20)
+                                }
+                                
+                                VStack(alignment: .leading) {
+                                    Text(song.title)
+                                        .foregroundStyle(isCurrent ? .blue : .primary)
+                                        .lineLimit(1)
+                                    Text(song.artist)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                
+                                Spacer()
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                playerService.play(song: song, playlist: playerService.queue)
+                            }
+                            .listRowBackground(isCurrent ? Color.primary.opacity(0.05) : Color.clear)
+                        }
+                        // 支持侧滑删除
+                        .onDelete(perform: playerService.removeSongs)
+                        // 支持拖拽排序 (必须在 EditMode 下或长按，Sheet 里通常长按即可)
+                        .onMove(perform: playerService.moveSongs)
                     }
                 }
             }
-        }
-    }
-    
-    // MARK: - 子视图
-    
-    private var headerView: some View {
-        HStack {
-            Text("播放队列")
-            Spacer()
-            if !playerService.queue.isEmpty {
-                Text("\(playerService.queue.count) 首歌曲")
-                    .font(.caption)
-                    .textCase(nil) // 取消全大写
+            .listStyle(.plain)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("当前播放")
+                        .font(.headline)
+                }
             }
         }
-        .foregroundStyle(.secondary)
-    }
-    
-    private var emptyQueueView: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "music.note.list")
-                .font(.largeTitle)
-                .foregroundStyle(.secondary)
-            Text("队列为空")
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.vertical, 40)
-        .listRowBackground(Color.clear)
     }
 }

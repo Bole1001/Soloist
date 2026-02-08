@@ -19,6 +19,9 @@ struct IphoneHomeView: View {
     @State private var showFileImporter = false
     @State private var currentArtworkData: Data? = nil
     
+    // 控制播放列表弹窗的状态
+    @State private var showQueueSheet = false
+    
     // Tab 选中状态
     @State private var selection: String = "library"
     
@@ -30,9 +33,9 @@ struct IphoneHomeView: View {
                 LocalLibraryPage()
             }
             
-            // Tab 2: 待播清单 (调用新文件)
-            Tab("待播清单", systemImage: "list.bullet.circle.fill", value: "queue") {
-                QueuePage(artworkData: currentArtworkData)
+            // Tab 2: 视效
+            Tab("视效", systemImage: "sparkles.tv", value: "visualizer") {
+                VisualizerPage(artworkData: currentArtworkData)
             }
             
             // Tab 3: 设置 (调用新文件，并把 libraryService 传进去)
@@ -41,9 +44,17 @@ struct IphoneHomeView: View {
             }
         }
         .tabViewBottomAccessory(isEnabled: playerService.currentSong != nil) {
-            MiniPlayerBar(showLyrics: $showLyricsPage)
-                // 进场/离场动画：配合 isEnabled 变化，实现从底部平滑滑入/滑出
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+            MiniPlayerBar(
+                showLyrics: $showLyricsPage,
+                showQueueSheet: $showQueueSheet
+            )
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+        .sheet(isPresented: $showQueueSheet) {
+            QueuePage()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
         }
         // 配合动画修饰符，确保布局回收时的过渡是丝滑的
         .animation(.spring(response: 0.5, dampingFraction: 0.8), value: playerService.currentSong?.id != nil)

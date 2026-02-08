@@ -16,33 +16,25 @@ struct MiniPlayerBar: View {
     
     @Namespace private var liquidNamespace
     
+    @Binding var showQueueSheet: Bool
+    
     var body: some View {
         ZStack {
-            // ===========================================
-            // Layer 1 (底层): 负责“液态玻璃”效果
-            // 包含两种形态的背景形状，通过 placement 切换
-            // ===========================================
             GlassEffectContainer {
                 if placement == .expanded {
                     // 悬浮态背景 (大胶囊)
                     Capsule(style: .continuous)
-                        .glassEffect(.regular.interactive()) // 玻璃材质 + 交互反馈
+                        .glassEffect(.regular.interactive())
                         .frame(height: 70)
                         .glassEffectID("background", in: liquidNamespace)
                 } else {
-                    // 行内态背景 (融入 TabBar 的扁平条)
-                    // 当 List 向下滚动时，系统会自动切换到这个状态
                     Rectangle()
-                        .glassEffect(.regular) // 较弱的模糊，适应行内样式
+                        .glassEffect(.regular)
                         .frame(height: 50)
                         .glassEffectID("background", in: liquidNamespace)
                 }
             }
             
-            // ===========================================
-            // Layer 2 (顶层): 负责“清晰内容”
-            // 内容浮在玻璃层之上，绝对清晰
-            // ===========================================
             Group {
                 if placement == .expanded {
                     ExpandedContent()
@@ -55,7 +47,6 @@ struct MiniPlayerBar: View {
         }
         // 全局点击手势
         .onTapGesture { showLyrics = true }
-        // 绑定默认动画，让收缩/展开的物理形变(Morphing)更顺滑
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: placement)
     }
     
@@ -66,8 +57,6 @@ struct MiniPlayerBar: View {
         HStack(spacing: 16) {
             // 1. 封面
             if let song = playerService.currentSong {
-                // 🔴 关键修正：移除了 .id(song.id)，保持视图存活
-                // 配合 ArtworkView 内部的缓存逻辑，解决切歌闪烁问题
                 ArtworkView(song: song, size: 48)
                     .clipShape(Circle())
                     .shadow(color: .black.opacity(0.2), radius: 5, y: 2)
@@ -101,8 +90,12 @@ struct MiniPlayerBar: View {
                 }
                 .buttonStyle(.plain)
                 
-                Button(action: { playerService.next() }) {
-                    Image(systemName: "forward.fill")
+                Button(action: {
+                    // 打开播放列表弹窗
+                    showQueueSheet = true
+                }) {
+                    // 图标改为三道杠列表
+                    Image(systemName: "music.note.list")
                         .font(.title3)
                         .foregroundStyle(.secondary)
                 }
@@ -138,15 +131,5 @@ struct MiniPlayerBar: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
-        // 支持左右轻扫切歌 (iOS 26 盲操规范)
-        .gesture(
-            DragGesture().onEnded { value in
-                if value.translation.width < -30 {
-                    playerService.next()
-                } else if value.translation.width > 30 {
-                    playerService.previous()
-                }
-            }
-        )
     }
 }

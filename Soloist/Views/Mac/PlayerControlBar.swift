@@ -116,9 +116,14 @@ struct PlayerControlBar: View {
                     }
                     .buttonStyle(.plain)
                     
-                    ControlButton(icon: "repeat", isActive: playerService.isLoopMode) {
+                    Button(action: {
                         playerService.toggleLoop()
+                    }){
+                        Image(systemName: playerService.isLoopMode ? "repeat.1" : "repeat")
+                        .font(.system(size: 13))
+                        .foregroundStyle(playerService.isLoopMode ? .blue : .primary)
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .frame(maxWidth: 420)
