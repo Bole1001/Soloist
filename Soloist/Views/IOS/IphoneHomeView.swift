@@ -25,22 +25,19 @@ struct IphoneHomeView: View {
     var body: some View {
         // ✨ 1. 标准 TabView 容器
         TabView(selection: $selection) {
-            
-            Tab("首页", systemImage: "house.fill", value: "library") {
+            // Tab 1: 首页 (保持不变，还是调用下面的 LocalLibraryPage)
+            Tab("资料库", systemImage: "music.note.house.fill", value: "library") {
                 LocalLibraryPage()
             }
             
-            Tab("播放中", systemImage: "magnifyingglass", value: "search") {
-                ZStack {
-                    IOSBackgroundView(artworkData: currentArtworkData)
-                    ContentUnavailableView("搜索", systemImage: "magnifyingglass")
-                }
+            // Tab 2: 待播清单 (调用新文件)
+            Tab("待播清单", systemImage: "list.bullet.circle.fill", value: "queue") {
+                QueuePage(artworkData: currentArtworkData)
             }
             
-            TabSection("设置") {
-                Tab("设置", systemImage: "music.note.list", value: "playlists") {
-                    Text("Playlists")
-                }
+            // Tab 3: 设置 (调用新文件，并把 libraryService 传进去)
+            Tab("设置", systemImage: "gearshape.fill", value: "settings") {
+                SettingsPage(libraryService: libraryService, artworkData: currentArtworkData)
             }
         }
         // ✨ 2. 核心修复：使用 isEnabled 参数彻底消除“幽灵占位”
@@ -73,16 +70,16 @@ struct IphoneHomeView: View {
                 currentArtworkData = nil
             }
         }
-        // 文件导入
-        .fileImporter(
-            isPresented: $showFileImporter,
-            allowedContentTypes: [.audio, UTType(filenameExtension: "lrc") ?? .plainText],
-            allowsMultipleSelection: true
-        ) { result in
-            if case .success(let urls) = result {
-                libraryService.importSongs(from: urls)
-            }
-        }
+//        // 文件导入
+//        .fileImporter(
+//            isPresented: $showFileImporter,
+//            allowedContentTypes: [.audio, UTType(filenameExtension: "lrc") ?? .plainText],
+//            allowsMultipleSelection: true
+//        ) { result in
+//            if case .success(let urls) = result {
+//                libraryService.importSongs(from: urls)
+//            }
+//        }
     }
     
     // MARK: - 子视图：本地音乐库
@@ -99,18 +96,18 @@ struct IphoneHomeView: View {
                     }
                 }
                 .navigationTitle("本地音乐")
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button(action: { libraryService.loadLocalDocuments() }) {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                        }
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button(action: { showFileImporter = true }) {
-                            Image(systemName: "plus")
-                        }
-                    }
-                }
+//                .toolbar {
+//                    ToolbarItem(placement: .topBarLeading) {
+//                        Button(action: { libraryService.loadLocalDocuments() }) {
+//                            Image(systemName: "arrow.triangle.2.circlepath")
+//                        }
+//                    }
+//                    ToolbarItem(placement: .topBarTrailing) {
+//                        Button(action: { showFileImporter = true }) {
+//                            Image(systemName: "plus")
+//                        }
+//                    }
+//                }
             }
         }
     }
