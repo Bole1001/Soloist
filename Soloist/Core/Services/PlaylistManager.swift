@@ -127,4 +127,16 @@ class PlaylistManager {
         
         return activeList[prevIndex]
     }
+    
+    // MARK: - List Update Helpers
+        
+    /// 更新原始列表（用于顺序模式下的排序/删除）
+    func updateOriginalList(_ list: [Song]) {
+        self.originalPlaylist = list
+    }
+    
+    /// 更新随机列表（用于随机模式下的排序/删除）
+    func updateShuffledList(_ list: [Song]) {
+        self.shuffledPlaylist = list
+    }
 }

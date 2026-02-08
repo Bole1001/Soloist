@@ -17,6 +17,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Assets.xcassets,
+				"Core/Extensions/AudioPlayerService+Interruption.swift",
 				"Core/Extensions/Notification+Ext.swift",
 				Core/Models/LyricLine.swift,
 				Core/Models/Song.swift,
@@ -49,6 +50,7 @@
 		EE6E4A5F2F35DE1D0094043F /* Exceptions for "Soloist" folder in "Soloist" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				"Core/Extensions/AudioPlayerService+Interruption.swift",
 				Views/IOS/IOSBackgroundView.swift,
 				Views/IOS/IphoneHomeView.swift,
 				Views/IOS/LyricsFullView.swift,

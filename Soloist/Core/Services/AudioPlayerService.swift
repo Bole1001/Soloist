@@ -8,6 +8,7 @@
 import Foundation
 import Combine
 import MediaPlayer
+import SwiftUI
 
 #if os(macOS)
 import AppKit
@@ -63,20 +64,31 @@ class AudioPlayerService: NSObject, ObservableObject {
     /// 当前歌曲的完整歌词列表
     @Published var lyrics: [LyricLine] = []
     
+    /// 当前播放队列
+    @Published var queue: [Song] = []
+    
     /// 随机播放模式开关
     @Published var isShuffleMode: Bool = true {
         didSet {
             playlist.isShuffleMode = isShuffleMode
-            // 当切换随机模式时，立即重新打乱列表，但保持当前歌曲不变
+            
+            // 切换模式时，立即刷新 UI 队列
             if isShuffleMode {
-                playlist.reshuffle(keepCurrentAtTop: currentSong)
+                // 切换到随机：如果随机表空，先洗牌
+                if playlist.shuffledPlaylist.isEmpty {
+                     playlist.reshuffle(keepCurrentAtTop: currentSong)
+                }
+                self.queue = playlist.shuffledPlaylist
+            } else {
+                // 切换到顺序
+                self.queue = playlist.originalPlaylist
             }
         }
     }
     
     /// 循环模式开关 (单曲循环/列表循环)
-    @Published var isLoopMode: Bool = true {
-        didSet { playlist.isLoopMode = isLoopMode }
+    @Published var isLoopMode: Bool = false {
+        didSet { playlist.isLoopMode = !isLoopMode }
     }
     
     // MARK: - Initialization
@@ -93,6 +105,10 @@ class AudioPlayerService: NSObject, ObservableObject {
         
         // 3. 绑定底层引擎的回调
         setupEngineCallbacks()
+        
+        #if os(iOS)
+        self.setupInterruptionHandling()
+        #endif
     }
     
     /// 配置 AVAudioSession
@@ -132,7 +148,15 @@ class AudioPlayerService: NSObject, ObservableObject {
         // 2. 自然播放结束
         engine.onPlaybackFinished = { [weak self] in
             DispatchQueue.main.async {
-                self?.next() // 自动切下一首
+                // false = 单曲循环：进度归零，重新播放
+                if self?.isLoopMode == true {
+                    self?.seek(to: 0)
+                    self?.play(song: self!.currentSong!, playlist: self!.playlist.originalPlaylist) // 重新激活播放状态
+                }
+                // true = 列表循环：切下一首
+                else {
+                    self?.next()
+                }
             }
         }
         
@@ -164,23 +188,38 @@ class AudioPlayerService: NSObject, ObservableObject {
     ///   - song: 目标歌曲
     ///   - list: 该歌曲所属的播放列表 (用于后续切歌)
     func play(song: Song, playlist list: [Song]) {
-        // 1. 更新播放列表管理器
-        self.playlist.updateList(list)
+        // 1. 列表更新逻辑
+        // 如果传入的新列表和当前列表不一样，或者当前列表为空，则更新
+        if list != playlist.originalPlaylist || playlist.originalPlaylist.isEmpty {
+            self.playlist.updateList(list)
+            
+            // 如果是随机模式，必须立即洗牌，生成 shuffledPlaylist
+            if isShuffleMode {
+                playlist.reshuffle(keepCurrentAtTop: song)
+            }
+        }
         
-        // 2. 如果是随机模式且随机表还没生成，生成一份
-        if isShuffleMode && playlist.shuffledPlaylist.isEmpty {
+        // 2. 双重保险：如果是随机模式，但随机表居然是空的（防止 Bug），强制洗一次
+        if isShuffleMode && playlist.shuffledPlaylist.isEmpty && !list.isEmpty {
+            print("⚠️ [AudioService] 检测到随机表为空，强制重新洗牌")
             playlist.reshuffle(keepCurrentAtTop: song)
         }
         
-        // 3. 更新当前歌曲状态
+        // 3. ✨ 关键步骤：先更新 currentSong，再同步 queue
         self.currentSong = song
+        
+        // 根据模式决定 UI 显示哪个队列
+        if isShuffleMode {
+            self.queue = playlist.shuffledPlaylist
+        } else {
+            self.queue = playlist.originalPlaylist
+        }
         
         // 4. 指挥引擎开始播放
         engine.play(url: song.url)
         isPlaying = true
         
         // 5. 异步加载歌词
-        // 延迟 0.1s 是为了避免切歌太快导致 UI 闪烁或资源争抢
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             self.loadLyricsForCurrentSong()
         }
@@ -241,6 +280,36 @@ class AudioPlayerService: NSObject, ObservableObject {
     
     func toggleLoop() {
         isLoopMode.toggle()
+    }
+    
+    // MARK: - Queue Management
+        
+    /// 删除队列中的歌曲
+    func removeSongs(at offsets: IndexSet) {
+        queue.remove(atOffsets: offsets)
+
+        if isShuffleMode {
+            playlist.updateShuffledList(queue)
+        } else {
+            playlist.updateOriginalList(queue)
+        }
+    }
+    
+    /// 拖拽排序
+    func moveSongs(from source: IndexSet, to destination: Int) {
+        queue.move(fromOffsets: source, toOffset: destination)
+        
+        if isShuffleMode {
+            playlist.updateShuffledList(queue)
+        } else {
+            playlist.updateOriginalList(queue)
+        }
+    }
+    
+    /// 添加歌曲到队列末尾
+    func appendToQueue(songs: [Song]) {
+        queue.append(contentsOf: songs)
+        playlist.updateList(queue)
     }
     
     // MARK: - Navigation Logic
