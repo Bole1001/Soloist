@@ -134,6 +134,9 @@ struct MacHomeView: View {
                                         isPlaying: playerService.currentSong?.id == song.id,
                                         onPlay: {
                                             playerService.play(song: song, playlist: libraryService.songs)
+                                        },
+                                        onAdd: {
+                                            playerService.addToNext(song: song)
                                         }
                                     )
                                     .listRowBackground(Color.clear)

@@ -21,6 +21,7 @@ struct SongListRow: View {
     let song: Song
     let isPlaying: Bool
     let onPlay: () -> Void
+    let onAdd: () -> Void
     
     // MARK: - Local State
     @State private var rowArtwork: Data? = nil
@@ -96,6 +97,26 @@ struct SongListRow: View {
                 }
                 
                 Spacer()
+                
+                // MARK: - 3. Add Button
+                Button(action: {
+                    // 震动反馈 (仅 iOS)
+                    #if os(iOS)
+                    let generator = UIImpactFeedbackGenerator(style: .light)
+                    generator.impactOccurred()
+                    #endif
+                    
+                    // 执行回调
+                    onAdd()
+                }) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 20, weight: .regular)) // 图标大小
+                        .foregroundColor(.secondary) // 灰色图标
+                        .frame(width: 44, height: 44) // 扩大点击热区
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, -5)
             }
             .padding(.vertical, 6)
             .padding(.horizontal, 12)

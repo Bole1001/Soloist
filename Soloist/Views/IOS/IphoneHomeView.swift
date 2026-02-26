@@ -106,7 +106,8 @@ struct IphoneHomeView: View {
                 SongListRow(
                     song: song,
                     isPlaying: playerService.currentSong?.id == song.id,
-                    onPlay: { playerService.play(song: song, playlist: libraryService.songs) }
+                    onPlay: { playerService.play(song: song, playlist: libraryService.songs) },
+                    onAdd: {playerService.addToNext(song: song)}
                 )
                 .listRowBackground(Color.clear)
                 .listRowSeparatorTint(.white.opacity(0.2))

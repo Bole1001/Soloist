@@ -312,6 +312,36 @@ class AudioPlayerService: NSObject, ObservableObject {
         playlist.updateList(queue)
     }
     
+    // MARK: - Queue Insert & Append (插队功能)
+        
+    /// 下一首播放 (插队)
+    /// 逻辑：找到当前播放歌曲的位置，把新歌插入到它后面
+    func addToNext(song: Song) {
+        // 1. 如果当前没有播放歌曲，或者队列为空，直接当做第一首播放
+        guard let current = currentSong,
+              let currentIndex = queue.firstIndex(where: { $0.id == current.id }) else {
+            play(song: song, playlist: [song])
+            return
+        }
+        
+        // 2. 插入到当前位置 + 1
+        let nextIndex = currentIndex + 1
+        
+        // 防止数组越界
+        if nextIndex <= queue.count {
+            queue.insert(song, at: nextIndex)
+        } else {
+            queue.append(song)
+        }
+        
+        // 3. 根据当前模式，同步到底层数据
+        if isShuffleMode {
+            playlist.updateShuffledList(queue)
+        } else {
+            playlist.updateOriginalList(queue)
+        }
+    }
+    
     // MARK: - Navigation Logic
     
     /// 下一首
