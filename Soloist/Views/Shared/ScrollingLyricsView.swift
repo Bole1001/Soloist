@@ -16,19 +16,14 @@ import SwiftUI
 /// 3. **交互跳转**: 点击歌词可直接调整进度。
 struct ScrollingLyricsView: View {
     
-    // MARK: - Dependencies
     @ObservedObject var playerService: AudioPlayerService
     
-    // MARK: - Configuration
     var activeFontSize: CGFloat = 32
     var inactiveFontSize: CGFloat = 20
     var activeFontWeight: Font.Weight = .bold
     var alignment: HorizontalAlignment = .leading
     
-    // 1. 计算属性：根据当前时间找到正在播放的那一行 ID
-    // 这比对比文本 (String) 更准确，能区分内容相同的重复歌词
     private var activeLineID: LyricLine.ID? {
-        // 找到最后一句“起始时间 <= 当前时间”的歌词
         return playerService.lyrics.last(where: {
             $0.startTime <= playerService.currentTime + 0.2
         })?.id
@@ -43,50 +38,65 @@ struct ScrollingLyricsView: View {
                     .foregroundColor(.white.opacity(0.5))
                 Spacer()
             } else {
-                ScrollViewReader { proxy in
-                    ScrollView(showsIndicators: false) {
-                        LazyVStack(alignment: alignment, spacing: 30) {
-                            ForEach(playerService.lyrics) { line in
-                                Text(line.text)
-                                    // 2. 使用 ID 对比来判断高亮
-                                    .font(.system(size: line.id == activeLineID ? activeFontSize : inactiveFontSize,
-                                                  weight: line.id == activeLineID ? activeFontWeight : .medium))
-                                    .foregroundColor(line.id == activeLineID ? .white : .white.opacity(0.4))
-                                    .multilineTextAlignment(alignment == .leading ? .leading : .center)
-                                    // 动画：当 ID 变化时才有动画
-                                    .animation(.easeInOut(duration: 0.2), value: activeLineID)
-                                    .id(line.id)
-                                    .onTapGesture {
-                                        playerService.seek(to: line.startTime)
-                                    }
+                // 用 GeometryReader 动态获取高度
+                GeometryReader { geo in
+                    ScrollViewReader { proxy in
+                        ScrollView(showsIndicators: false) {
+                            LazyVStack(alignment: alignment, spacing: 30) {
+                                ForEach(playerService.lyrics) { line in
+                                    Text(line.text)
+                                        .font(.system(
+                                            size: line.id == activeLineID ? activeFontSize : inactiveFontSize,
+                                            weight: line.id == activeLineID ? activeFontWeight : .medium
+                                        ))
+                                        .foregroundColor(line.id == activeLineID ? .white : .white.opacity(0.4))
+                                        .multilineTextAlignment(alignment == .leading ? .leading : .center)
+                                        .animation(.easeInOut(duration: 0.2), value: activeLineID)
+                                        .id(line.id)
+                                        .onTapGesture {
+                                            playerService.seek(to: line.startTime)
+                                        }
+                                }
                             }
+                            // 动态留白，刚好是视图高度的一半，确保首尾都能完美居中
+                            .padding(.vertical, geo.size.height * 0.5)
+                            .padding(.horizontal, 20)
                         }
-                        .padding(.vertical, 300) // 保持原有留白
-                        .padding(.horizontal, 20)
-                    }
-                    // 3. 视觉优化：添加渐变遮罩 (Mask)
-                    // 让歌词在顶部和底部呈现“淡入淡出”效果，而不是生硬消失
-                    .mask(
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: .clear, location: 0),    // 顶部透明
-                                .init(color: .black, location: 0.15), // 中间显示
-                                .init(color: .black, location: 0.85), // 中间显示
-                                .init(color: .clear, location: 1)     // 底部透明
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
+                        .mask(
+                            LinearGradient(
+                                gradient: Gradient(stops: [
+                                    .init(color: .clear, location: 0),
+                                    .init(color: .black, location: 0.15),
+                                    .init(color: .black, location: 0.85),
+                                    .init(color: .clear, location: 1)
+                                ]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
                         )
-                    )
-                    // 4. 监听 activeLineID 变化来驱动滚动
-                    .onChange(of: activeLineID) {
-                        if let targetID = activeLineID {
-                            withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-                                proxy.scrollTo(targetID, anchor: .center)
+                        // 监听变化时调用独立函数
+                        .onChange(of: activeLineID) {
+                            scrollToCurrent(proxy: proxy)
+                        }
+                        // 视图刚出现时，延迟一点点执行初始滚动
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                scrollToCurrent(proxy: proxy)
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+    
+    // 统一的滚动逻辑
+    private func scrollToCurrent(proxy: ScrollViewProxy) {
+        let targetID = activeLineID ?? playerService.lyrics.first?.id
+        
+        if let targetID = targetID {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                proxy.scrollTo(targetID, anchor: .center)
             }
         }
     }
