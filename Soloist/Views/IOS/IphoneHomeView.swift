@@ -10,6 +10,27 @@ import UniformTypeIdentifiers
 
 /// iOS 端主页视图 (IphoneHomeView)
 struct IphoneHomeView: View {
+    // MARK: - Search Logic
+    // 搜索框的输入内容
+    @State private var searchText = ""
+    
+    // 根据搜索内容过滤后的歌曲列表
+    private var filteredSongs: [Song] {
+        if searchText.isEmpty {
+            return libraryService.songs
+        } else {
+            return libraryService.songs.filter { song in
+                song.title.localizedCaseInsensitiveContains(searchText) ||
+                song.artist.localizedCaseInsensitiveContains(searchText)
+            }
+        }
+    }
+    
+    // 控制删除确认弹窗的状态
+    @State private var showDeleteConfirmation = false
+    // 临时记录准备删除的歌曲实体
+    @State private var pendingDeleteSongs: [Song] = []
+    
     // MARK: - State Objects
     @StateObject private var libraryService = LocalLibraryService()
     @EnvironmentObject var playerService: AudioPlayerService
@@ -26,23 +47,59 @@ struct IphoneHomeView: View {
     @State private var selection: String = "library"
     
     var body: some View {
-        // 标准 TabView 容器
         TabView(selection: $selection) {
-            // Tab 1: 首页 (保持不变，还是调用下面的 LocalLibraryPage)
+            
+            // Tab 1: 资料库
             Tab("资料库", systemImage: "music.note.house.fill", value: "library") {
                 LocalLibraryPage()
             }
             
-            // Tab 2: 视效
+            // Tab 2: 搜索
+            Tab("搜索", systemImage: "magnifyingglass", value: "search", role: .search) {
+                NavigationStack {
+                    ZStack {
+                        // 背景色（系统默认）
+                        Color(UIColor.systemBackground).ignoresSafeArea()
+                        
+                        Group {
+                            // 搜索页的 3 种状态
+                            if searchText.isEmpty {
+                                // 状态 A：还没开始搜索
+                                VStack(spacing: 16) {
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 50))
+                                        .foregroundStyle(.tertiary)
+                                    Text("搜索您的音乐库")
+                                        .font(.headline)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } else if filteredSongs.isEmpty {
+                                // 状态 B：搜了，但没找到
+                                Text("找不到与 \"\(searchText)\" 相关的结果")
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                // 状态 C：显示搜索结果
+                                buildSongList(songs: filteredSongs)
+                            }
+                        }
+                    }
+                    .navigationTitle("搜索")
+                    .searchable(text: $searchText, prompt: "搜索歌曲或歌手")
+                }
+            }
+            
+            // Tab 3: 视效
             Tab("视效", systemImage: "sparkles.tv", value: "visualizer") {
                 VisualizerPage(artworkData: currentArtworkData)
             }
             
-            // Tab 3: 设置 (调用新文件，并把 libraryService 传进去)
+            // Tab 4: 设置
             Tab("设置", systemImage: "gearshape.fill", value: "settings") {
                 SettingsPage(libraryService: libraryService, artworkData: currentArtworkData)
             }
         }
+        
+        // 底部播放条辅助插件
         .tabViewBottomAccessory(isEnabled: playerService.currentSong != nil) {
             MiniPlayerBar(
                 showLyrics: $showLyricsPage,
@@ -56,13 +113,12 @@ struct IphoneHomeView: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.ultraThinMaterial)
         }
-        // 配合动画修饰符，确保布局回收时的过渡是丝滑的
         .animation(.spring(response: 0.5, dampingFraction: 0.8), value: playerService.currentSong?.id != nil)
         
-        // 动态收缩行为
-        .tabBarMinimizeBehavior(.onScrollDown)
+        // 动态收缩行为：向下滚动时自动最小化液态 Tab 栏
+        .tabBarMinimizeBehavior(playerService.currentSong != nil ? .onScrollDown : .automatic)
         
-        // 全局全屏页 (歌词)
+        // 全屏盖层 (歌词)
         .fullScreenCover(isPresented: $showLyricsPage) {
             LyricsFullView(
                 playerService: playerService,
@@ -70,7 +126,7 @@ struct IphoneHomeView: View {
                 artworkData: currentArtworkData
             )
         }
-        // 生命周期与数据加载
+        // 生命周期
         .onAppear { libraryService.loadLocalDocuments() }
         .task(id: playerService.currentSong?.id) {
             if let song = playerService.currentSong {
@@ -87,11 +143,11 @@ struct IphoneHomeView: View {
         ZStack {
             IOSBackgroundView(artworkData: currentArtworkData)
             NavigationStack {
-                VStack(spacing: 0) {
+                Group {
                     if libraryService.songs.isEmpty {
                         emptyStateView
                     } else {
-                        songListView
+                        buildSongList(songs: libraryService.songs)
                     }
                 }
                 .navigationTitle("本地音乐")
@@ -99,29 +155,54 @@ struct IphoneHomeView: View {
         }
     }
     
-    // 列表视图
-    private var songListView: some View {
+    // MARK: - 共享组件：列表视图
+    private func buildSongList(songs: [Song]) -> some View {
         List {
-            ForEach(libraryService.songs) { song in
+            ForEach(songs) { song in
                 SongListRow(
                     song: song,
                     isPlaying: playerService.currentSong?.id == song.id,
                     onPlay: { playerService.play(song: song, playlist: libraryService.songs) },
-                    onAdd: {playerService.addToNext(song: song)}
+                    onAdd: { playerService.addToNext(song: song) }
                 )
                 .listRowBackground(Color.clear)
                 .listRowSeparatorTint(.white.opacity(0.2))
                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
             }
             .onDelete { indexSet in
-                libraryService.deleteSongs(at: indexSet)
+                // 不直接删，先把要删的歌找出来存进临时数组
+                pendingDeleteSongs = indexSet.map { songs[$0] }
+                // 触发确认弹窗
+                showDeleteConfirmation = true
             }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Color.clear)
+        
+        // 挂载系统原生的底部确认弹窗
+        .alert("确认删除", isPresented: $showDeleteConfirmation) {
+            Button("删除歌曲", role: .destructive) {
+                // 用户点击了红色的确认删除
+                for song in pendingDeleteSongs {
+                    // 去全库里找这首歌的真实索引
+                    if let realIndex = libraryService.songs.firstIndex(where: { $0.id == song.id }) {
+                        libraryService.deleteSongs(at: IndexSet(integer: realIndex))
+                    }
+                }
+                // 删完清空临时记录
+                pendingDeleteSongs.removeAll()
+            }
+            Button("取消", role: .cancel) {
+                // 用户反悔了，清空记录即可
+                pendingDeleteSongs.removeAll()
+            }
+        } message: {
+            Text("这首歌曲将从本地库中永久移除，确定吗？")
+        }
     }
     
+    // MARK: - 共享组件：空状态
     private var emptyStateView: some View {
         VStack(spacing: 20) {
             Image(systemName: "music.note.list")
