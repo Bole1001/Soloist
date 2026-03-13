@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Combine
 
 struct LyricsFullView: View {
     @ObservedObject var playerService: AudioPlayerService
@@ -93,25 +94,9 @@ struct LyricsFullView: View {
                     .frame(maxHeight: .infinity) // 撑开中间的所有空间
 
                     // 自定义的精美进度条 + 时间
-                    VStack(spacing: 12) {
-                        SleekSlider(
-                            currentTime: $playerService.currentTime,
-                            duration: playerService.duration,
-                            onSeek: { time in
-                                playerService.seek(to: time)
-                            }
-                        )
-                        
-                        HStack {
-                            Text(formatTime(playerService.currentTime))
-                            Spacer()
-                            Text(formatTime(playerService.duration))
-                        }
-                        .font(.caption2.monospacedDigit())
-                        .foregroundColor(.white.opacity(0.6))
-                    }
-                    .padding(.horizontal, 30)
-                    .padding(.bottom, 20)
+                    PlayerProgressView(playerService: playerService)
+                        .padding(.horizontal, 30)
+                        .padding(.bottom, 20)
 
                     // 底部控制区
                     PlaybackControls(playerService: playerService, size: 40)
@@ -139,56 +124,81 @@ struct LyricsFullView: View {
 }
 
 // MARK: 自定义极简进度条组件
-struct SleekSlider: View {
-    @Binding var currentTime: Double
-    var duration: Double
-    var onSeek: (Double) -> Void
+struct PlayerProgressView: View {
+    @ObservedObject var playerService: AudioPlayerService
     
-    // 用于拖动时临时保存进度，防止和播放器的自动刷新冲突
+    let timer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
+    
+    // 用于平滑显示的本地时间，脱离 playerService 的低频刷新
+    @State private var smoothTime: Double = 0
     @State private var dragProgress: Double? = nil
     
     var body: some View {
-        GeometryReader { geo in
-            let currentProgress = dragProgress ?? (duration > 0 ? currentTime / duration : 0)
-            
-            ZStack(alignment: .leading) {
-                // 底层半透明轨道 (高度 5)
-                Capsule()
-                    .fill(Color.white.opacity(0.2))
-                    .frame(height: 5)
+        VStack(spacing: 12) {
+            // 1. 细线进度条
+            GeometryReader { geo in
+                let duration = playerService.duration > 0 ? playerService.duration : 1
+                let currentProgress = dragProgress ?? (smoothTime / duration)
                 
-                // 走过的白色轨道 (高度 5)
-                Capsule()
-                    .fill(Color.white)
-                    .frame(width: max(0, geo.size.width * CGFloat(currentProgress)), height: 5)
-                
-                // 超小巧的滑块 (直径 8)
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 8, height: 8)
-                    // 让圆心对齐进度的末端
-                    .offset(x: max(0, geo.size.width * CGFloat(currentProgress)) - 4)
-                    .shadow(color: .black.opacity(0.3), radius: 2)
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.2))
+                        .frame(height: 5)
+                    
+                    Capsule()
+                        .fill(Color.white)
+                        .frame(width: max(0, geo.size.width * CGFloat(currentProgress)), height: 5)
+                    
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 8, height: 8)
+                        .offset(x: max(0, geo.size.width * CGFloat(currentProgress)) - 4)
+                        .shadow(color: .black.opacity(0.3), radius: 2)
+                }
+                .frame(height: 20)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            let percentage = min(max(0, value.location.x / geo.size.width), 1)
+                            dragProgress = percentage
+                            smoothTime = percentage * duration // 拖动时，时间文字实时跟着变
+                        }
+                        .onEnded { value in
+                            let percentage = min(max(0, value.location.x / geo.size.width), 1)
+                            playerService.seek(to: percentage * duration)
+                            
+                            // 稍微延迟 0.2 秒再释放拖动状态，防止由于播放器时间还没跟上导致的“指针回闪”现象
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                dragProgress = nil
+                            }
+                        }
+                )
             }
-            // 整个 ZStack 高度设为 20，这样手指好点，但视觉上依然很细
             .frame(height: 20)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        // 拖动中，更新本地临时进度
-                        let percentage = min(max(0, value.location.x / geo.size.width), 1)
-                        dragProgress = percentage
-                    }
-                    .onEnded { value in
-                        // 松手时，计算最终时间并传给播放器跳转
-                        let percentage = min(max(0, value.location.x / geo.size.width), 1)
-                        dragProgress = nil
-                        onSeek(percentage * duration)
-                    }
-            )
+            
+            // 2. 时间文本
+            HStack {
+                Text(formatTime(smoothTime))
+                Spacer()
+                Text(formatTime(playerService.duration))
+            }
+            .font(.caption2.monospacedDigit())
+            .foregroundColor(.white.opacity(0.6))
         }
-        // 限制外部占位高度
-        .frame(height: 20)
+        // 接收定时器信号，高频更新本地进度
+        .onReceive(timer) { _ in
+            if dragProgress == nil { // 只有在用户没拖动滑块时，才自动往前走
+                smoothTime = playerService.currentTime
+            }
+        }
+    }
+    
+    private func formatTime(_ time: Double) -> String {
+        guard !time.isNaN && !time.isInfinite else { return "0:00" }
+        let totalSeconds = max(0, Int(time))
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 }
