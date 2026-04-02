@@ -22,6 +22,8 @@ struct ScrollingLyricsView: View {
     var inactiveFontSize: CGFloat = 20
     var activeFontWeight: Font.Weight = .bold
     var alignment: HorizontalAlignment = .leading
+    // 接收是否为沉浸模式的状态
+    var isImmersive: Bool = true
     
     private var activeLineID: LyricLine.ID? {
         return playerService.lyrics.last(where: {
@@ -96,7 +98,8 @@ struct ScrollingLyricsView: View {
         
         if let targetID = targetID {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-                proxy.scrollTo(targetID, anchor: .center)
+                let anchorY = isImmersive ? 0.35 : 0.5
+                proxy.scrollTo(targetID, anchor: UnitPoint(x: 0.5, y: anchorY))
             }
         }
     }

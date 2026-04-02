@@ -14,7 +14,7 @@ struct LyricsFullView: View {
     let artworkData: Data?
     
     // 沉浸式模式切换状态
-    @State private var isImmersive = false
+    @State private var isImmersive = true
     
     var body: some View {
         GeometryReader { geometry in
@@ -88,7 +88,8 @@ struct LyricsFullView: View {
                         playerService: playerService,
                         activeFontSize: isImmersive ? 32 : 28,
                         inactiveFontSize: isImmersive ? 20 : 18,
-                        alignment: .center // 保持居中排版
+                        alignment: .center, // 保持居中排版
+                        isImmersive: isImmersive
                     )
                     .padding(.vertical, 20)
                     .frame(maxHeight: .infinity) // 撑开中间的所有空间
