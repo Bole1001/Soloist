@@ -36,7 +36,6 @@ struct MetadataService {
             
             for item in metadata {
                 // 1. 处理通用键值 (Common Keys)
-                // AVFoundation 会自动适配 ID3v2 和 iTunes Atom 格式
                 if let commonKey = item.commonKey {
                     switch commonKey {
                     case .commonKeyTitle:
@@ -49,10 +48,9 @@ struct MetadataService {
                 }
                 
                 // 2. 处理内嵌歌词
-                // 需要手动检查特定的原始键值 (Raw Keys)
                 if let keyString = item.key as? String {
-                    // USLT: ID3v2 非同步歌词 (Unsynchronized Lyrics)
-                    // SYLT: ID3v2 同步歌词 (Synchronized Lyrics)
+                    // USLT: ID3v2 非同步歌词
+                    // SYLT: ID3v2 同步歌词
                     // ©lyr: iTunes/M4A 歌词原子
                     if keyString == "USLT" || keyString == "©lyr" || keyString == "SYLT" {
                         lyrics = try? await item.load(.stringValue)
@@ -63,12 +61,24 @@ struct MetadataService {
             print("⚠️ [MetadataService] 解析元数据失败: \(url.lastPathComponent) - \(error)")
         }
         
-        // 返回轻量级模型
+        // 3. 核心修复：仅提取相对路径作为稳定 ID，不再篡改真实 URL
+        let docsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].path
+        var stableID = url.path
+        
+        if stableID.hasPrefix(docsPath) {
+            stableID = String(stableID.dropFirst(docsPath.count))
+        } else {
+            // 外部挂载目录，直接使用文件名作为稳定 ID
+            stableID = url.lastPathComponent
+        }
+        
+        // 4. 返回模型
         return Song(
-            url: url,
-            title: title,
-            artist: artist,
-            lrcURL: nil,      // 此时尚未进行外部 LRC 文件匹配，留空
+            id: stableID,    // 稳定的标识符
+            url: url,        // 保留真实 URL
+            title: title ?? url.deletingPathExtension().lastPathComponent,
+            artist: artist ?? "Unknown Artist",
+            lrcURL: nil,
             embeddedLyrics: lyrics
         )
     }

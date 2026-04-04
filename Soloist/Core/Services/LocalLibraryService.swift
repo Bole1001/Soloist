@@ -31,13 +31,13 @@ class LocalLibraryService: ObservableObject {
     // MARK: - Lifecycle
     
     init() {
-            #if os(macOS)
-            restorePermission()
-            #else
-            // iOS 启动时，直接扫描 Documents 目录 (加载 iTunes 共享或上次导入的文件)
-            //loadLocalDocuments()
-            #endif
-        }
+        #if os(macOS)
+        restorePermission()
+        #else
+        // iOS 启动时，直接扫描 Documents 目录 (加载 iTunes 共享或上次导入的文件)
+        //loadLocalDocuments()
+        #endif
+    }
     
     /// 析构时自动释放权限，防止资源泄漏
     deinit {
@@ -53,7 +53,6 @@ class LocalLibraryService: ObservableObject {
     
     func scanAndSavePermission(at url: URL) {
         do {
-            // MARK: - 修改点 1：跨平台书签选项适配
             #if os(macOS)
             let options: URL.BookmarkCreationOptions = .withSecurityScope
             #else
@@ -72,7 +71,6 @@ class LocalLibraryService: ObservableObject {
         guard let bookmarkData = UserDefaults.standard.data(forKey: "UserMusicFolderBookmark") else { return }
         var isStale = false
         
-        // MARK: - 修改点 2：跨平台解析选项适配
         #if os(macOS)
         let options: URL.BookmarkResolutionOptions = .withSecurityScope
         #else
@@ -132,37 +130,30 @@ class LocalLibraryService: ObservableObject {
                 
                 for fileURL in targetURLs {
                     group.addTask {
-                        // 2.1 调用 MetadataService 解析基础信息 (不含图片)
+                        // 2.1 调用 MetadataService 解析基础信息
                         let baseSong = await MetadataService.parse(url: fileURL)
                         
-                        // 2.2 查找外部 LRC 文件 (IO 操作)
+                        // 2.2 查找外部 LRC 文件
                         let parentDir = fileURL.deletingLastPathComponent()
                         let baseName = fileURL.deletingPathExtension().lastPathComponent
                         
-                        // 歌词查找规则：同级目录、Lyrics 子目录
                         let candidates = [
                             parentDir.appendingPathComponent("Lyrics").appendingPathComponent(baseName).appendingPathExtension("lrc"),
                             parentDir.appendingPathComponent("lyrics").appendingPathComponent(baseName).appendingPathExtension("lrc"),
                             fileURL.deletingPathExtension().appendingPathExtension("lrc")
                         ]
                         
-                        // 2.3 检查是否存在 LRC
                         let foundLrcURL = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) })
                         
-                        // 2.4 构建最终 Song 对象
-                        if let lrc = foundLrcURL {
-                            return Song(
-                                id: baseSong.id,         // 保持原 ID
-                                url: baseSong.url,
-                                title: baseSong.title,
-                                artist: baseSong.artist,
-                                lrcURL: lrc,             // ✨ 注入 LRC 路径
-                                embeddedLyrics: baseSong.embeddedLyrics
-                            )
-                        } else {
-                            // 没找到 LRC，直接返回 MetadataService 解析出的基础对象
-                            return baseSong
-                        }
+                        // 2.4 构建最终 Song 对象 (直接透传绝对路径)
+                        return Song(
+                            id: baseSong.id,      // 继承 MetadataService 生成的稳定 ID
+                            url: fileURL,         // ✨ 传入真实音频 URL
+                            title: baseSong.title,
+                            artist: baseSong.artist,
+                            lrcURL: foundLrcURL,  // ✨ 传入真实歌词 URL
+                            embeddedLyrics: baseSong.embeddedLyrics
+                        )
                     }
                 }
                 
@@ -189,87 +180,72 @@ class LocalLibraryService: ObservableObject {
     
     // MARK: - Deletion Logic
         
-        /// 删除指定歌曲 (同时删除关联的 LRC 文件)
-        func deleteSongs(at offsets: IndexSet) {
-            let fileManager = FileManager.default
+    /// 删除指定歌曲 (同时删除关联的 LRC 文件)
+    func deleteSongs(at offsets: IndexSet) {
+        let fileManager = FileManager.default
+        
+        offsets.forEach { index in
+            let song = songs[index]
             
-            offsets.forEach { index in
-                let song = songs[index]
+            do {
+                // 1. 删除音频文件 (调用计算属性 url)
+                try fileManager.removeItem(at: song.url)
+                print("🗑️ 已删除音频: \(song.title)")
                 
-                do {
-                    // 1. 删除音频文件
-                    try fileManager.removeItem(at: song.url)
-                    print("🗑️ 已删除音频: \(song.title)")
-                    
-                    // 2. 尝试删除关联的歌词文件 (如果有)
-                    if let lrcURL = song.lrcURL {
-                        try? fileManager.removeItem(at: lrcURL)
-                        print("🗑️ 已删除关联歌词")
-                    }
-                } catch {
-                    print("❌ 删除失败: \(error.localizedDescription)")
+                // 2. 尝试删除关联的歌词文件 (如果有)
+                if let lrcURL = song.lrcURL {
+                    try? fileManager.removeItem(at: lrcURL)
+                    print("🗑️ 已删除关联歌词")
                 }
+            } catch {
+                print("❌ 删除失败: \(error.localizedDescription)")
             }
-            
-            // 3. 从内存数组中移除
-            songs.remove(atOffsets: offsets)
-            
-            // 4. 更新持久化缓存 (可选)
-            LibraryPersistenceService.saveLibrary(songs: songs)
         }
+        
+        // 3. 从内存数组中移除
+        songs.remove(atOffsets: offsets)
+        
+        // 4. 更新持久化缓存
+        LibraryPersistenceService.saveLibrary(songs: songs)
+    }
     
     // MARK: - Public Actions
         
     /// 手动刷新当前库 (用于检测新歌)
-    /// 用户点击“刷新”按钮时调用此方法，无需重新选择文件夹
     func refreshLibrary() {
-        // 确保当前有正在访问的文件夹
         guard let url = accessingURL else {
             print("⚠️ [LocalLibrary] 无法刷新：当前没有挂载的文件夹")
             return
         }
         
         print("🔄 [LocalLibrary] 触发手动刷新...")
-        
-        // 直接复用当前 URL 进行强制扫描
-        // 触发 TaskGroup 重新遍历硬盘 -> 更新内存 -> 写入 JSON
         scanDirectory(at: url)
     }
     
     // MARK: - App Sandbox Logic (App 本地存储)
         
-    /// 获取 App 沙盒内的 Documents 目录
-    /// 这里是 iOS/macOS 存放用户长期数据的标准位置
     var documentsDirectory: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
     
-    /// 导入歌曲到 App 本地沙盒
-    ///
-    /// - Parameter sourceURLs: 用户在文件选择器里选中的外部文件 URL
     func importSongs(from sourceURLs: [URL]) {
         let fileManager = FileManager.default
-        let destFolder = documentsDirectory // 直接存到 Documents 根目录，或者你可以建个子文件夹 "Music"
+        let destFolder = documentsDirectory
         
-        // 1. 遍历用户选中的文件
         for srcURL in sourceURLs {
-            // 安全访问外部文件 (iOS 必须步骤)
             let accessing = srcURL.startAccessingSecurityScopedResource()
             
             defer {
                 if accessing { srcURL.stopAccessingSecurityScopedResource() }
             }
             
-            // 2. 构建目标路径
             let destURL = destFolder.appendingPathComponent(srcURL.lastPathComponent)
             
             do {
-                // 3. 如果文件已存在，先删除（或者你可以选择跳过）
                 if fileManager.fileExists(atPath: destURL.path) {
                     try fileManager.removeItem(at: destURL)
                 }
                 
-                // 4. 复制文件 (Copy)
                 try fileManager.copyItem(at: srcURL, to: destURL)
                 print("✅ [Import] 成功导入: \(srcURL.lastPathComponent)")
                 
@@ -278,13 +254,10 @@ class LocalLibraryService: ObservableObject {
             }
         }
         
-        // 5. 导入完成后，自动刷新显示 Documents 目录的内容
         scanDirectory(at: documentsDirectory)
     }
     
-    /// 专门扫描 App 本地目录的方法
     func loadLocalDocuments() {
-        // Documents 目录不需要申请权限，直接扫
         scanDirectory(at: documentsDirectory)
     }
 }

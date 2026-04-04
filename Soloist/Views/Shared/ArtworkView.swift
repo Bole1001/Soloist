@@ -30,16 +30,14 @@ struct ArtworkView: View {
     // MARK: - Local State
     @State private var currentArtwork: Data? = nil
     
-    // MARK: - ✨ 关键修复：自定义初始化方法
+    // MARK: - 自定义初始化方法
     init(song: Song?, size: CGFloat) {
         self.song = song
         self.size = size
         
         // 核心逻辑：在 View 刚出生时，直接同步去缓存里拿图
-        // 如果拿到图，直接把 @State 初始化为这张图，而不是 nil
-        // 这样即使 View 被反复销毁重建，也不会出现“先显示灰图”的情况
         if let currentSong = song {
-            let cacheKey = currentSong.id.uuidString as NSString
+            let cacheKey = currentSong.id as NSString
             if let cachedData = ArtworkCache.shared.object(forKey: cacheKey) {
                 // 使用 _currentArtwork 对 State 进行底层初始化
                 _currentArtwork = State(initialValue: cachedData as Data)
@@ -82,14 +80,13 @@ struct ArtworkView: View {
         .animation(.easeInOut(duration: 0.3), value: currentArtwork)
         
         // MARK: - Data Loading
-        // 这里的任务主要负责：1. 没缓存时的异步加载 2. 数据更新
         .task(id: song?.id) {
             guard let currentSong = song else {
                 currentArtwork = nil
                 return
             }
             
-            let cacheKey = currentSong.id.uuidString as NSString
+            let cacheKey = currentSong.id as NSString
             
             // 1. 再次检查缓存 (为了双重保险)
             if let cachedData = ArtworkCache.shared.object(forKey: cacheKey) {
@@ -100,7 +97,6 @@ struct ArtworkView: View {
             }
             
             // 2. 异步加载
-            // 注意：加载期间不要设为 nil，保留上一首歌的图 (如果有的话)
             let loadedData = await ArtworkLoader.loadArtwork(for: currentSong)
             
             // 3. 写入缓存并更新 UI
