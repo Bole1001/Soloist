@@ -36,6 +36,7 @@
 				Core/Services/MetadataService.swift,
 				Core/Services/PlaylistManager.swift,
 				Core/Services/SystemMediaHandler.swift,
+				Core/Services/UserPlaylistManager.swift,
 				Core/Services/WebDAVService.swift,
 				Core/Services/WebServerUI.swift,
 				SoloistApp.swift,

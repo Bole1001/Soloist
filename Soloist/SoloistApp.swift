@@ -24,7 +24,9 @@ struct SoloistApp: App {
     
     @StateObject private var playerService = AudioPlayerService.shared
     
-    // ✨ 新增 1：WebDAV 服务状态（仅限 iOS）
+    @StateObject private var userPlaylistManager = UserPlaylistManager()
+    
+    // WebDAV 服务状态（仅限 iOS）
     #if os(iOS)
     @StateObject private var webDAVService = WebDAVService()
     @Environment(\.scenePhase) private var scenePhase
@@ -39,6 +41,8 @@ struct SoloistApp: App {
             MacHomeView()
                 .background(VisualEffect().ignoresSafeArea())
                 .environmentObject(playerService)
+                .environmentObject(userPlaylistManager)
+                .environmentObject(playerService.queueManager)
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
@@ -51,10 +55,11 @@ struct SoloistApp: App {
         WindowGroup {
             IphoneHomeView()
                 .environmentObject(playerService)
-                // ✨ 新增 2：将服务注入到 iOS 视图树
                 .environmentObject(webDAVService)
+                .environmentObject(userPlaylistManager)
+                .environmentObject(playerService.queueManager)
         }
-        // ✨ 新增 3：生命周期安全锁（退到后台强制断开服务器）
+        // 生命周期安全锁（退到后台强制断开服务器）
         .onChange(of: scenePhase) { oldPhase, newPhase in
             if newPhase == .background {
                 webDAVService.stopServer()

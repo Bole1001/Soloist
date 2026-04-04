@@ -11,6 +11,8 @@ import Combine
 struct LyricsFullView: View {
     @ObservedObject var playerService: AudioPlayerService
     @Binding var showLyrics: Bool
+    // 局部状态，专门控制播放列表弹窗的显示
+    @State private var showQueueSheet: Bool = false
     let artworkData: Data?
     
     // 沉浸式模式切换状态
@@ -100,9 +102,15 @@ struct LyricsFullView: View {
                         .padding(.bottom, 20)
 
                     // 底部控制区
-                    PlaybackControls(playerService: playerService, size: 40)
-                        .foregroundColor(.white)
-                        .padding(.bottom, geometry.safeAreaInsets.bottom > 0 ? 20 : 40)
+                    PlaybackControls(
+                        playerService: playerService,
+                        size: 40,
+                        onQueueTap: {
+                            showQueueSheet = true
+                        }
+                    )
+                    .foregroundColor(.white)
+                    .padding(.bottom, geometry.safeAreaInsets.bottom > 0 ? 20 : 40)
                 }
             }
         }
@@ -112,6 +120,12 @@ struct LyricsFullView: View {
                 if value.translation.height > 100 { showLyrics = false }
             }
         )
+        // 监听 showQueueSheet 的变化，弹出半屏模态框
+        .sheet(isPresented: $showQueueSheet) {
+            QueuePage()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
     }
     
     // 时间格式化防崩处理

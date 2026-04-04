@@ -78,26 +78,27 @@ struct MiniPlayerBar: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             
             // 3. 按钮
-            HStack(spacing: 12) {
+            HStack(spacing: 4) {
                 Button(action: {
-                    withAnimation(.spring(response: 0.3)) {
-                        playerService.togglePlayPause()
-                    }
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    playerService.togglePlayPause()
                 }) {
                     Image(systemName: playerService.isPlaying ? "pause.fill" : "play.fill")
                         .font(.title3)
                         .foregroundStyle(.primary)
+                        .frame(width: 44, height: 44)
+                        .contentTransition(.symbolEffect(.replace))
                 }
                 .buttonStyle(.plain)
                 
                 Button(action: {
-                    // 打开播放列表弹窗
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     showQueueSheet = true
                 }) {
-                    // 图标改为三道杠列表
                     Image(systemName: "music.note.list")
                         .font(.title3)
                         .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
             }
@@ -124,9 +125,14 @@ struct MiniPlayerBar: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             
             // 仅显示播放/暂停
-            Button(action: { playerService.togglePlayPause() }) {
+            Button(action: {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                playerService.togglePlayPause()
+            }) {
                 Image(systemName: playerService.isPlaying ? "pause.fill" : "play.fill")
                     .font(.body)
+                    .frame(width: 30, height: 44) // 扩大纵向热区
+                    .contentTransition(.symbolEffect(.replace)) // 补充丝滑过渡动画
             }
             .buttonStyle(.plain)
         }

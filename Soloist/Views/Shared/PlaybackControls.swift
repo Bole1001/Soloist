@@ -7,54 +7,113 @@
 
 import SwiftUI
 
+struct BouncyPlaybackButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.8 : 1.0)
+            .opacity(configuration.isPressed ? 0.7 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
+    }
+}
+
 /// 播放控制组件 (PlaybackControls)
-///
-/// **职责**: 提供上一首、播放/暂停、下一首这三个核心控制按钮。
-/// **特性**:
-/// 1. 样式高度复用：支持通过 `size` 参数整体缩放。
-/// 2. 视觉层级：播放/暂停按钮比两侧按钮大一倍 (1.2x vs 0.6x)，突出核心操作。
-/// 3. 交互优化：播放状态切换时具备丝滑的符号过渡动画。
 struct PlaybackControls: View {
     
-    // MARK: - Dependencies
     @ObservedObject var playerService: AudioPlayerService
+    @EnvironmentObject var userPlaylistManager: UserPlaylistManager
     
-    /// 基础尺寸基准
-    ///
-    /// 所有按钮的大小和间距都基于此数值进行比例缩放，以保持布局比例一致。
     let size: CGFloat
+    var onQueueTap: (() -> Void)? = nil
     
     var body: some View {
-        // 使用动态间距：约为基础尺寸的 60%
-        HStack(spacing: size * 0.6) {
+        HStack {
+            // MARK: - 1. 红心 (左一)
+            Group {
+                if let currentSong = playerService.currentSong {
+                    let isFav = userPlaylistManager.isFavorite(songID: currentSong.id)
+                    Button {
+                        #if os(iOS)
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        #endif
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                            userPlaylistManager.toggleFavorite(songID: currentSong.id)
+                        }
+                    } label: {
+                        Image(systemName: isFav ? "heart.fill" : "heart")
+                            .font(.system(size: size * 0.55))
+                            .foregroundStyle(isFav ? Color.red : Color.white.opacity(0.8))
+                            .scaleEffect(isFav ? 1.1 : 1.0)
+                            .frame(width: size, height: size)
+                    }
+                    .buttonStyle(BouncyPlaybackButtonStyle())
+                } else {
+                    Color.clear.frame(width: size, height: size)
+                }
+            }
             
-            // MARK: - Previous Track
-            Button(action: { playerService.previous() }) {
+            Spacer()
+            
+            // MARK: - 2. 上一首 (左二)
+            Button(action: {
+                #if os(iOS)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                #endif
+                playerService.previous()
+            }) {
                 Image(systemName: "backward.fill")
-                    // 辅助按钮大小：基础尺寸的 60%
-                    .font(.system(size: size * 0.6))
+                    .font(.system(size: size * 0.65))
+                    .frame(width: size, height: size)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BouncyPlaybackButtonStyle())
             
-            // MARK: - Play / Pause
-            Button(action: { playerService.togglePlayPause() }) {
-                // 根据播放状态切换实心圆图标
+            Spacer()
+            
+            // MARK: - 3. 播放/暂停 (绝对居中)
+            Button(action: {
+                #if os(iOS)
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                #endif
+                playerService.togglePlayPause()
+            }) {
                 Image(systemName: playerService.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    // 核心按钮大小：基础尺寸的 120%
-                    .font(.system(size: size * 1.2))
-                    // ✨ 核心修改：添加符号替换的过渡动画
-                    // 当图标从 play 变为 pause 时，会有形变过渡效果 (需 macOS 14+ / iOS 17+)
+                    .font(.system(size: size * 1.3))
                     .contentTransition(.symbolEffect(.replace))
+                    .frame(width: size * 1.5, height: size * 1.5)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BouncyPlaybackButtonStyle())
             
-            // MARK: - Next Track
-            Button(action: { playerService.next() }) {
+            Spacer()
+            
+            // MARK: - 4. 下一首 (右二)
+            Button(action: {
+                #if os(iOS)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                #endif
+                playerService.next()
+            }) {
                 Image(systemName: "forward.fill")
-                    // 辅助按钮大小：基础尺寸的 60%
-                    .font(.system(size: size * 0.6))
+                    .font(.system(size: size * 0.65))
+                    .frame(width: size, height: size)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(BouncyPlaybackButtonStyle())
+            
+            Spacer()
+            
+            // MARK: - 5. 播放列表 (右一)
+            Button {
+                #if os(iOS)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                #endif
+                onQueueTap?()
+            } label: {
+                Image(systemName: "music.note.list")
+                    .font(.system(size: size * 0.55))
+                    .foregroundStyle(onQueueTap == nil ? Color.secondary.opacity(0.5) : Color.white.opacity(0.8))
+                    .frame(width: size, height: size)
+            }
+            .buttonStyle(BouncyPlaybackButtonStyle())
+            .disabled(onQueueTap == nil)
         }
+        .frame(maxWidth: 320)
     }
 }

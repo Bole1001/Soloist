@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Combine
 
 /// 播放列表管理器 (PlaylistManager)
 ///
@@ -15,19 +16,19 @@ import Foundation
 /// 该类核心逻辑在于维护两套列表：
 /// 1. `originalPlaylist`: 原始顺序（如用户导入的专辑列表或文件夹顺序）。
 /// 2. `shuffledPlaylist`: 随机映射表，确保随机播放时不会重复播放同一首歌，直到列表播完。
-class PlaylistManager {
+class PlaylistManager: ObservableObject {
     
     // MARK: - Data Source
     
     /// 原始播放列表
     ///
     /// 仅限内部修改，外部只读，以保证数据源的唯一性和安全性。
-    private(set) var originalPlaylist: [Song] = []
+    @Published private(set) var originalPlaylist: [Song] = []
     
     /// 随机播放列表
     ///
     /// 当 `isShuffleMode` 为 true 时，播放器将依照此列表的顺序进行导航。
-    private(set) var shuffledPlaylist: [Song] = []
+    @Published private(set) var shuffledPlaylist: [Song] = []
     
     // MARK: - Configuration
     
@@ -35,13 +36,13 @@ class PlaylistManager {
     ///
     /// - `true`: 使用 `shuffledPlaylist` 进行导航。
     /// - `false`: 使用 `originalPlaylist` 进行导航。
-    var isShuffleMode: Bool = true
+    @Published var isShuffleMode: Bool = true
     
     /// 循环模式开关
     ///
     /// - `true`: 列表播放结束后自动回到第一首（列表循环）。
     /// - `false`: 列表播放结束后停止播放。
-    var isLoopMode: Bool = true
+    @Published var isLoopMode: Bool = true
     
     // MARK: - Playlist Management
     

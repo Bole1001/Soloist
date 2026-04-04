@@ -7,70 +7,90 @@
 
 import SwiftUI
 
-/// 专门用于 MiniPlayer 弹出的简易播放列表视图
+/// 专门用于 MiniPlayer 弹出的播放队列与逻辑管理视图
 struct QueuePage: View {
+    // MARK: - Dependencies
     @EnvironmentObject var playerService: AudioPlayerService
+    
+    @EnvironmentObject var queueManager: PlaylistManager
+    @EnvironmentObject var userPlaylistManager: UserPlaylistManager
     
     var body: some View {
         NavigationStack {
             List {
-                // 1. 顶部控制区 (类似网易云的“播放全部/循环模式”)
+                // MARK: - 1. 播放模式控制区
                 Section {
                     HStack {
-                        // 循环模式切换按钮
-                        Button(action: { playerService.toggleLoop() }) {
-                            HStack {
-                                Image(systemName: playerService.isLoopMode ? "repeat.1" : "repeat")
-                                Text(playerService.isLoopMode ? "单曲循环" : "列表循环")
-                            }
-                            .font(.subheadline)
-                            .foregroundStyle(playerService.isLoopMode ? .blue : .primary)                        }
+                        // 循环模式切换
+                        Button {
+                            #if os(iOS)
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            #endif
+                            queueManager.isLoopMode.toggle()
+                        } label: {
+                            Label(queueManager.isLoopMode ? "单曲循环" : "列表循环",
+                                  systemImage: queueManager.isLoopMode ? "repeat.1" : "repeat")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(queueManager.isLoopMode ? .blue : .primary)
+                                .contentTransition(.symbolEffect(.replace)) // 丝滑切换动画
+                        }
                         
                         Spacer()
                         
-                        // 随机播放
-                        Button(action: { playerService.toggleShuffle() }) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "shuffle")
-                                Text(playerService.isShuffleMode ? "随机播放" : "顺序播放")
+                        // 随机播放切换
+                        Button {
+                            #if os(iOS)
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            #endif
+                            withAnimation(.spring()) {
+                                queueManager.isShuffleMode.toggle()
+                                // 切换随机模式后，立刻重洗队列
+                                queueManager.reshuffle(keepCurrentAtTop: playerService.currentSong)
                             }
-                            .font(.subheadline)
-                            // 激活时变色，状态更清晰
-                            .foregroundStyle(playerService.isShuffleMode ? .blue : .primary)
+                        } label: {
+                            Label(queueManager.isShuffleMode ? "随机播放" : "顺序播放",
+                                  systemImage: "shuffle")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(queueManager.isShuffleMode ? .blue : .primary)
                         }
-                        .buttonStyle(.plain)
                     }
+                    .buttonStyle(.plain)
                     .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                 }
                 
-                // 2. 歌曲列表 (复用逻辑)
+                // MARK: - 2. 动态队列列表
                 Section {
-                    if playerService.queue.isEmpty {
-                        Text("队列为空")
+                    // 确定当前展示哪个列表
+                    let currentDisplayList = queueManager.isShuffleMode ? queueManager.shuffledPlaylist : queueManager.originalPlaylist
+                    
+                    if currentDisplayList.isEmpty {
+                        Text("当前队列无歌曲")
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
+                            .listRowBackground(Color.clear)
                     } else {
-                        ForEach(playerService.queue) { song in
+                        // 使用 enumerated() 规避 $O(n)$ 查找索引，提升性能
+                        ForEach(Array(currentDisplayList.enumerated()), id: \.element.id) { index, song in
                             let isCurrent = playerService.currentSong?.id == song.id
                             
                             HStack(spacing: 12) {
-                                // 正在播放的动态图标
+                                // 状态指示器
                                 if isCurrent {
                                     Image(systemName: "chart.bar.fill")
                                         .foregroundStyle(.blue)
-                                        .font(.caption)
                                 } else {
-                                    // 序号或空位
-                                    Text("\(playerService.queue.firstIndex(where: {$0.id == song.id})! + 1)")
-                                        .font(.caption)
+                                    Text("\(index + 1)")
+                                        .font(.system(.caption, design: .monospaced))
                                         .foregroundStyle(.secondary)
-                                        .frame(width: 20)
+                                        .frame(width: 24)
                                 }
                                 
-                                VStack(alignment: .leading) {
+                                VStack(alignment: .leading, spacing: 2) {
                                     Text(song.title)
+                                        .font(.system(size: 16, weight: isCurrent ? .bold : .regular))
                                         .foregroundStyle(isCurrent ? .blue : .primary)
                                         .lineLimit(1)
+                                    
                                     Text(song.artist)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
@@ -78,28 +98,48 @@ struct QueuePage: View {
                                 }
                                 
                                 Spacer()
+                                
+                                // 在队列里直接点红心
+                                Button {
+                                    userPlaylistManager.toggleFavorite(songID: song.id)
+                                } label: {
+                                    Image(systemName: userPlaylistManager.isFavorite(songID: song.id) ? "heart.fill" : "heart")
+                                        .font(.caption)
+                                        .foregroundStyle(userPlaylistManager.isFavorite(songID: song.id) ? .red : .secondary.opacity(0.5))
+                                }
+                                .buttonStyle(.plain)
                             }
                             .contentShape(Rectangle())
                             .onTapGesture {
-                                playerService.play(song: song, playlist: playerService.queue)
+                                // 切换歌曲，并告知播放器目前的队列上下文
+                                playerService.play(song: song)
                             }
-                            .listRowBackground(isCurrent ? Color.primary.opacity(0.05) : Color.clear)
+                            .listRowBackground(isCurrent ? Color.blue.opacity(0.08) : Color.clear)
                         }
-                        // 支持侧滑删除
-                        .onDelete(perform: playerService.removeSongs)
-                        // 支持拖拽排序 (必须在 EditMode 下或长按，Sheet 里通常长按即可)
+                        .onDelete { offsets in
+                            if queueManager.isShuffleMode {
+                                queueManager.updateShuffledList(remove(from: queueManager.shuffledPlaylist, at: offsets))
+                            } else {
+                                queueManager.updateOriginalList(remove(from: queueManager.originalPlaylist, at: offsets))
+                            }
+                        }
                         .onMove(perform: playerService.moveSongs)
                     }
+                } header: {
+                    Text("待播清单")
+                        .font(.caption.bold())
                 }
             }
-            .listStyle(.plain)
+            .listStyle(.insetGrouped)
+            .navigationTitle("播放队列")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("当前播放")
-                        .font(.headline)
-                }
-            }
         }
+    }
+    
+    // 辅助函数：处理 IndexSet 删除
+    private func remove(from list: [Song], at offsets: IndexSet) -> [Song] {
+        var newList = list
+        newList.remove(atOffsets: offsets)
+        return newList
     }
 }
