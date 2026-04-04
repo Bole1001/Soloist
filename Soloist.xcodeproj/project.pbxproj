@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		EE7A5A822F80ECC500C9DD80 /* GCDWebServer in Frameworks */ = {isa = PBXBuildFile; productRef = EE7A5A812F80ECC500C9DD80 /* GCDWebServer */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		EE5BDBE02F29BE4E0055F4D8 /* Soloist.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Soloist.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		EE6E4A442F35C3C60094043F /* Soloist-iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Soloist-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -32,6 +36,8 @@
 				Core/Services/MetadataService.swift,
 				Core/Services/PlaylistManager.swift,
 				Core/Services/SystemMediaHandler.swift,
+				Core/Services/WebDAVService.swift,
+				Core/Services/WebServerUI.swift,
 				SoloistApp.swift,
 				Views/IOS/IOSBackgroundView.swift,
 				Views/IOS/IphoneHomeView.swift,
@@ -52,6 +58,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				"Core/Extensions/AudioPlayerService+Interruption.swift",
+				Core/Services/WebDAVService.swift,
 				Views/IOS/IOSBackgroundView.swift,
 				Views/IOS/IphoneHomeView.swift,
 				Views/IOS/LyricsFullView.swift,
@@ -88,6 +95,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EE7A5A822F80ECC500C9DD80 /* GCDWebServer in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -99,6 +107,7 @@
 			children = (
 				EE93907B2F36E9D700D9AF37 /* Soloist-iOS-Info.plist */,
 				EE5BDBE22F29BE4E0055F4D8 /* Soloist */,
+				EE7A5A832F80EDA200C9DD80 /* Frameworks */,
 				EE5BDBE12F29BE4E0055F4D8 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -110,6 +119,13 @@
 				EE6E4A442F35C3C60094043F /* Soloist-iOS.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		EE7A5A832F80EDA200C9DD80 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -151,6 +167,7 @@
 			);
 			name = "Soloist-iOS";
 			packageProductDependencies = (
+				EE7A5A812F80ECC500C9DD80 /* GCDWebServer */,
 			);
 			productName = "Soloist-iOS";
 			productReference = EE6E4A442F35C3C60094043F /* Soloist-iOS.app */;
@@ -183,6 +200,9 @@
 			);
 			mainGroup = EE5BDBD72F29BE4E0055F4D8;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				EE7A5A802F80ECC500C9DD80 /* XCRemoteSwiftPackageReference "GCDWebServer" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EE5BDBE12F29BE4E0055F4D8 /* Products */;
 			projectDirPath = "";
@@ -542,6 +562,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		EE7A5A802F80ECC500C9DD80 /* XCRemoteSwiftPackageReference "GCDWebServer" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/yene/GCDWebServer.git";
+			requirement = {
+				branch = master;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		EE7A5A812F80ECC500C9DD80 /* GCDWebServer */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EE7A5A802F80ECC500C9DD80 /* XCRemoteSwiftPackageReference "GCDWebServer" */;
+			productName = GCDWebServer;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = EE5BDBD82F29BE4E0055F4D8 /* Project object */;
 }

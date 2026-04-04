@@ -16,25 +16,29 @@ struct SoloistApp: App {
     
     // MARK: - App Delegate Integration
     
-    // 使用 AppKit 的 AppDelegate 接管生命周期和菜单栏逻辑
     #if os(macOS)
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     #endif
     
     // MARK: - State Management
-    // 全局唯一的播放服务，生命周期跟随 App
+    
     @StateObject private var playerService = AudioPlayerService.shared
+    
+    // ✨ 新增 1：WebDAV 服务状态（仅限 iOS）
+    #if os(iOS)
+    @StateObject private var webDAVService = WebDAVService()
+    @Environment(\.scenePhase) private var scenePhase
+    #endif
     
     var body: some Scene {
         
         // MARK: - macOS Scene Configuration
         #if os(macOS)
         
-        // 1. 主应用程序窗口
         Window("Soloist", id: "MainWindow") {
             MacHomeView()
                 .background(VisualEffect().ignoresSafeArea())
-                .environmentObject(playerService) // 注入环境变量
+                .environmentObject(playerService)
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
@@ -47,6 +51,14 @@ struct SoloistApp: App {
         WindowGroup {
             IphoneHomeView()
                 .environmentObject(playerService)
+                // ✨ 新增 2：将服务注入到 iOS 视图树
+                .environmentObject(webDAVService)
+        }
+        // ✨ 新增 3：生命周期安全锁（退到后台强制断开服务器）
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            if newPhase == .background {
+                webDAVService.stopServer()
+            }
         }
         
         #endif
@@ -54,7 +66,6 @@ struct SoloistApp: App {
 }
 
 // MARK: - Helper Views (macOS)
-
 #if os(macOS)
 struct VisualEffect: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
