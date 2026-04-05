@@ -120,7 +120,7 @@ class LocalLibraryService: ObservableObject {
         )
         
         Task {
-            // 1. 快速遍历：仅收集文件路径 (串行操作，速度极快)
+            // 1. 快速遍历：仅收集文件路径
             var targetURLs: [URL] = []
             while let fileURL = enumerator?.nextObject() as? URL {
                 if supportedExtensions.contains(fileURL.pathExtension.lowercased()) {
@@ -128,59 +128,73 @@ class LocalLibraryService: ObservableObject {
                 }
             }
             
-            print("🔍 [LocalLibrary] 发现 \(targetURLs.count) 个音频文件，启动并发解析...")
+            print("🔍 [LocalLibrary] 发现 \(targetURLs.count) 个音频文件，启动受限并发解析...")
             
-            // 2. 并发解析核心 (TaskGroup)
+            // 2. 受限并发 (滑动窗口模式)
             let parsedSongs = await withTaskGroup(of: Song?.self, returning: [Song].self) { group in
+                let maxConcurrency = 15 // 绝对红线：最多同时打开 15 个文件
+                var iterator = targetURLs.makeIterator()
+                var activeTasks = 0
                 
-                for fileURL in targetURLs {
-                    group.addTask {
-                        // 2.1 调用 MetadataService 解析基础信息
-                        let baseSong = await MetadataService.parse(url: fileURL)
-                        
-                        // 2.2 查找外部 LRC 文件
-                        let parentDir = fileURL.deletingLastPathComponent()
-                        let baseName = fileURL.deletingPathExtension().lastPathComponent
-                        
-                        let candidates = [
-                            parentDir.appendingPathComponent("Lyrics").appendingPathComponent(baseName).appendingPathExtension("lrc"),
-                            parentDir.appendingPathComponent("lyrics").appendingPathComponent(baseName).appendingPathExtension("lrc"),
-                            fileURL.deletingPathExtension().appendingPathExtension("lrc")
-                        ]
-                        
-                        let foundLrcURL = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) })
-                        
-                        // 2.4 构建最终 Song 对象 (直接透传绝对路径)
-                        return Song(
-                            id: baseSong.id,      // 继承 MetadataService 生成的稳定 ID
-                            url: fileURL,         // ✨ 传入真实音频 URL
-                            title: baseSong.title,
-                            artist: baseSong.artist,
-                            lrcURL: foundLrcURL,  // ✨ 传入真实歌词 URL
-                            embeddedLyrics: baseSong.embeddedLyrics
-                        )
+                // 预加载第一批任务
+                while activeTasks < maxConcurrency, let fileURL = iterator.next() {
+                    group.addTask { await self.parseSingleFile(fileURL) }
+                    activeTasks += 1
+                }
+                
+                var results: [Song] = []
+                
+                // 只要有任务完成，就立刻塞入下一个新任务，永远保持 15 个并发额度
+                for await song in group {
+                    if let song = song { results.append(song) }
+                    
+                    if let fileURL = iterator.next() {
+                        group.addTask { await self.parseSingleFile(fileURL) }
+                    } else {
+                        activeTasks -= 1
                     }
                 }
                 
-                // 3. 收集结果
-                var results: [Song] = []
-                for await song in group {
-                    if let song = song { results.append(song) }
-                }
-                
-                // 4. 排序 (按标题 A-Z)
                 return results.sorted { $0.title < $1.title }
             }
             
-            // 5. 持久化缓存
+            // 3. 持久化缓存
             LibraryPersistenceService.saveLibrary(songs: parsedSongs)
             
-            // 6. 回到主线程更新 UI
+            // 4. 广播垃圾回收信号 (发送本次扫描发现的所有合法 ID)
+            let validIDs = Set(parsedSongs.map { $0.id })
+            NotificationCenter.default.post(name: .libraryDidUpdate, object: nil, userInfo: ["validIDs": validIDs])
+            
+            // 5. 回到主线程更新 UI
             await MainActor.run {
                 self.songs = parsedSongs
                 print("✅ [LocalLibrary] 扫描完成，共加载 \(self.songs.count) 首歌")
             }
         }
+    }
+    
+    /// 私有辅助方法：解析单首歌曲（将之前的嵌套逻辑抽离，保持代码清晰）
+    private func parseSingleFile(_ fileURL: URL) async -> Song? {
+        let baseSong = await MetadataService.parse(url: fileURL)
+        let parentDir = fileURL.deletingLastPathComponent()
+        let baseName = fileURL.deletingPathExtension().lastPathComponent
+        
+        let candidates = [
+            parentDir.appendingPathComponent("Lyrics").appendingPathComponent(baseName).appendingPathExtension("lrc"),
+            parentDir.appendingPathComponent("lyrics").appendingPathComponent(baseName).appendingPathExtension("lrc"),
+            fileURL.deletingPathExtension().appendingPathExtension("lrc")
+        ]
+        
+        let foundLrcURL = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) })
+        
+        return Song(
+            id: baseSong.id,
+            url: fileURL,
+            title: baseSong.title,
+            artist: baseSong.artist,
+            lrcURL: foundLrcURL,
+            embeddedLyrics: baseSong.embeddedLyrics
+        )
     }
     
     // MARK: - Deletion Logic
@@ -265,4 +279,9 @@ class LocalLibraryService: ObservableObject {
     func loadLocalDocuments() {
         scanDirectory(at: documentsDirectory)
     }
+}
+
+extension Notification.Name {
+    /// 曲库扫描完成信号
+    static let libraryDidUpdate = Notification.Name("SoloistLibraryDidUpdate")
 }
