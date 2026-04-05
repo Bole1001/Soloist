@@ -23,20 +23,31 @@ struct SongListRow: View {
     let onPlay: () -> Void
     let onAdd: () -> Void
     
+    // 依赖注入
+    @EnvironmentObject var userPlaylistManager: UserPlaylistManager
+    
     // MARK: - Local State
     @State private var rowArtwork: Data? = nil
     
-    // 记录悬停状态 (macOS)
     #if os(macOS)
     @State private var isHovering: Bool = false
     #endif
     
-    // 判断何时显示遮罩层
+    // 辅助计算属性 1
     private var shouldShowOverlay: Bool {
         #if os(macOS)
         return isPlaying || isHovering
         #else
         return isPlaying
+        #endif
+    }
+    
+    // ✨ 修复 1：将其移出 body，作为结构体的独立成员
+    private var isHoveringForStyle: Bool {
+        #if os(macOS)
+        return isHovering
+        #else
+        return false
         #endif
     }
     
@@ -98,21 +109,30 @@ struct SongListRow: View {
                 
                 Spacer()
                 
-                // MARK: - 3. Add Button
-                Button(action: {
-                    // 震动反馈 (仅 iOS)
-                    #if os(iOS)
-                    let generator = UIImpactFeedbackGenerator(style: .light)
-                    generator.impactOccurred()
-                    #endif
-                    
-                    // 执行回调
-                    onAdd()
-                }) {
+                // MARK: - 3. Add to Playlist Menu
+                Menu {
+                    if userPlaylistManager.customPlaylists.isEmpty {
+                        Text("暂无自建歌单")
+                    } else {
+                        Text("添加到歌单")
+                        ForEach(userPlaylistManager.customPlaylists) { playlist in
+                            let isAlreadyIn = playlist.songIDs.contains(song.id)
+                            Button(action: {
+                                #if os(iOS)
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                #endif
+                                userPlaylistManager.addSong(song.id, toPlaylist: playlist.id)
+                            }) {
+                                Label(playlist.name, systemImage: isAlreadyIn ? "checkmark.circle.fill" : "music.note.list")
+                            }
+                            .disabled(isAlreadyIn)
+                        }
+                    }
+                } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 20, weight: .regular)) // 图标大小
-                        .foregroundColor(.secondary) // 灰色图标
-                        .frame(width: 44, height: 44) // 扩大点击热区
+                        .font(.system(size: 20, weight: .regular))
+                        .foregroundColor(.secondary)
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -120,34 +140,23 @@ struct SongListRow: View {
             }
             .padding(.vertical, 6)
             .padding(.horizontal, 12)
-            // 扩大点击区域，确保点击空白处也能触发
             .contentShape(Rectangle())
-        }
-        // 应用自定义样式，处理背景色和按压动画
+        } // ✨ 修复 2：Button 实体必须在这里完全闭合
+        
+        // ✨ 修复 3：修饰符必须挂载在 Button 的外部层级
         .buttonStyle(SongRowButtonStyle(isPlaying: isPlaying, isHovering: isHoveringForStyle))
         
-        // 保持 macOS 的悬停逻辑
         #if os(macOS)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
                 self.isHovering = hovering
             }
         }
-        #endif
-    }
-    
-    // 辅助计算属性：为了让 iOS 编译通过
-    private var isHoveringForStyle: Bool {
-        #if os(macOS)
-        return isHovering
-        #else
-        return false
-        #endif
+        #endif // ✨ 修复 4：修正了非法的 #endif 语法
     }
 }
 
 // MARK: - Custom Button Style
-/// 专门用于处理列表行的点击态、播放态和悬停态
 struct SongRowButtonStyle: ButtonStyle {
     let isPlaying: Bool
     let isHovering: Bool
@@ -163,22 +172,15 @@ struct SongRowButtonStyle: ButtonStyle {
     }
     
     private func backgroundColor(isPressed: Bool) -> Color {
-        // 1. 播放中
         if isPlaying {
             return Color.accentColor.opacity(0.1)
         }
-        
-        // 2. 按压 (iOS/Mac 通用)
         if isPressed {
-            return Color.gray.opacity(0.2) // 按下时的深色反馈
+            return Color.gray.opacity(0.2)
         }
-        
-        // 3. 鼠标悬停
         if isHovering {
             return Color.gray.opacity(0.1)
         }
-        
-        // 4. 默认透明
         return Color.clear
     }
 }

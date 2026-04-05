@@ -165,15 +165,33 @@ struct IphoneHomeView: View {
                     onPlay: { playerService.play(song: song, playlist: libraryService.songs) },
                     onAdd: { playerService.addToNext(song: song) }
                 )
+                .buttonStyle(.plain)
                 .listRowBackground(Color.clear)
                 .listRowSeparatorTint(.white.opacity(0.2))
                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-            }
-            .onDelete { indexSet in
-                // 不直接删，先把要删的歌找出来存进临时数组
-                pendingDeleteSongs = indexSet.map { songs[$0] }
-                // 触发确认弹窗
-                showDeleteConfirmation = true
+                
+                // 左滑：插队播放
+                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                    Button {
+                        #if os(iOS)
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        #endif
+                        playerService.addToNext(song: song)
+                    } label: {
+                        Label("下一首播放", systemImage: "text.insert")
+                    }
+                    .tint(.accentColor)
+                }
+                
+                // 右滑：删除
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        pendingDeleteSongs = [song]
+                        showDeleteConfirmation = true
+                    } label: {
+                        Label("删除", systemImage: "trash")
+                    }
+                }
             }
         }
         .listStyle(.plain)
@@ -183,18 +201,14 @@ struct IphoneHomeView: View {
         // 挂载系统原生的底部确认弹窗
         .alert("确认删除", isPresented: $showDeleteConfirmation) {
             Button("删除歌曲", role: .destructive) {
-                // 用户点击了红色的确认删除
                 for song in pendingDeleteSongs {
-                    // 去全库里找这首歌的真实索引
                     if let realIndex = libraryService.songs.firstIndex(where: { $0.id == song.id }) {
                         libraryService.deleteSongs(at: IndexSet(integer: realIndex))
                     }
                 }
-                // 删完清空临时记录
                 pendingDeleteSongs.removeAll()
             }
             Button("取消", role: .cancel) {
-                // 用户反悔了，清空记录即可
                 pendingDeleteSongs.removeAll()
             }
         } message: {

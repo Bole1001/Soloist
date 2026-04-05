@@ -116,6 +116,17 @@ struct PlaylistDetailView: View {
                             .buttonStyle(.plain)
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                Button {
+                                    #if os(iOS)
+                                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                    #endif
+                                    playerService.addToNext(song: song)
+                                } label: {
+                                    Label("下一首播放", systemImage: "text.insert")
+                                }
+                                .tint(.accentColor) // 使用 App 主题色（通常是蓝色或紫色）
+                            }
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) {
                                     if isFavoriteList {
@@ -127,8 +138,7 @@ struct PlaylistDetailView: View {
                                     Label("移除", systemImage: "trash")
                                 }
                             }
-                        } // ⚠️ 严格审查点：ForEach 的大括号必须在这里绝对闭合！
-                        // ✨ .onMove 必须依附在 ForEach 上，而不是内部的 Row 上
+                        }
                         .onMove { source, destination in
                             if isFavoriteList {
                                 userPlaylistManager.moveFavorites(from: source, to: destination)
