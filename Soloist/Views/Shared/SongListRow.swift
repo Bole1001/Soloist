@@ -42,7 +42,6 @@ struct SongListRow: View {
         #endif
     }
     
-    // ✨ 修复 1：将其移出 body，作为结构体的独立成员
     private var isHoveringForStyle: Bool {
         #if os(macOS)
         return isHovering
@@ -110,25 +109,7 @@ struct SongListRow: View {
                 Spacer()
                 
                 // MARK: - 3. Add to Playlist Menu
-                Menu {
-                    if userPlaylistManager.customPlaylists.isEmpty {
-                        Text("暂无自建歌单")
-                    } else {
-                        Text("添加到歌单")
-                        ForEach(userPlaylistManager.customPlaylists) { playlist in
-                            let isAlreadyIn = playlist.songIDs.contains(song.id)
-                            Button(action: {
-                                #if os(iOS)
-                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                #endif
-                                userPlaylistManager.addSong(song.id, toPlaylist: playlist.id)
-                            }) {
-                                Label(playlist.name, systemImage: isAlreadyIn ? "checkmark.circle.fill" : "music.note.list")
-                            }
-                            .disabled(isAlreadyIn)
-                        }
-                    }
-                } label: {
+                AddToPlaylistMenu(song: song) {
                     Image(systemName: "plus")
                         .font(.system(size: 20, weight: .regular))
                         .foregroundColor(.secondary)
@@ -141,9 +122,8 @@ struct SongListRow: View {
             .padding(.vertical, 6)
             .padding(.horizontal, 12)
             .contentShape(Rectangle())
-        } // ✨ 修复 2：Button 实体必须在这里完全闭合
+        }
         
-        // ✨ 修复 3：修饰符必须挂载在 Button 的外部层级
         .buttonStyle(SongRowButtonStyle(isPlaying: isPlaying, isHovering: isHoveringForStyle))
         
         #if os(macOS)
@@ -152,7 +132,7 @@ struct SongListRow: View {
                 self.isHovering = hovering
             }
         }
-        #endif // ✨ 修复 4：修正了非法的 #endif 语法
+        #endif
     }
 }
 

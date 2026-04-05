@@ -48,6 +48,7 @@
 				Views/IOS/PlaylistDetailView.swift,
 				Views/IOS/QueuePage.swift,
 				Views/IOS/SettingsPage.swift,
+				Views/Shared/AddToPlaylistMenu.swift,
 				Views/Shared/ArtworkBackgroundView.swift,
 				Views/Shared/ArtworkView.swift,
 				Views/Shared/PlaybackControls.swift,

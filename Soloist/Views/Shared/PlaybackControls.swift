@@ -40,8 +40,8 @@ struct PlaybackControls: View {
                         }
                     } label: {
                         Image(systemName: isFav ? "heart.fill" : "heart")
-                            .font(.system(size: size * 0.55))
-                            .foregroundStyle(isFav ? Color.red : Color.white.opacity(0.8))
+                            .font(.system(size: size * 0.6, weight: .medium))
+                            .foregroundStyle(isFav ? Color.red : Color.white.opacity(0.6))
                             .scaleEffect(isFav ? 1.1 : 1.0)
                             .frame(width: size, height: size)
                     }
@@ -53,7 +53,7 @@ struct PlaybackControls: View {
             
             Spacer()
             
-            // MARK: - 2. 上一首 (左二)
+            // MARK: - 2. 上一首 (左二 - 视觉降重)
             Button(action: {
                 #if os(iOS)
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -61,30 +61,41 @@ struct PlaybackControls: View {
                 playerService.previous()
             }) {
                 Image(systemName: "backward.fill")
-                    .font(.system(size: size * 0.65))
+                    // ✨ 核心修复：限制字重为 regular，防止变通体肥胖
+                    .font(.system(size: size * 0.7, weight: .regular))
+                    .foregroundColor(.white.opacity(0.9))
                     .frame(width: size, height: size)
             }
             .buttonStyle(BouncyPlaybackButtonStyle())
             
             Spacer()
             
-            // MARK: - 3. 播放/暂停 (绝对居中)
+            // MARK: - 3. 播放/暂停
             Button(action: {
                 #if os(iOS)
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 #endif
                 playerService.togglePlayPause()
             }) {
-                Image(systemName: playerService.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: size * 1.3))
-                    .contentTransition(.symbolEffect(.replace))
-                    .frame(width: size * 1.5, height: size * 1.5)
+                ZStack {
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: size * 1.8, height: size * 1.8)
+                        .shadow(color: .black.opacity(0.15), radius: 10, y: 5)
+                    
+                    Image(systemName: playerService.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: size * 0.8, weight: .black))
+                        .foregroundColor(.black)
+                        .contentTransition(.symbolEffect(.replace))
+                        .offset(x: playerService.isPlaying ? 0 : size * 0.08)
+                }
+                .frame(width: size * 1.8, height: size * 1.8)
             }
             .buttonStyle(BouncyPlaybackButtonStyle())
             
             Spacer()
             
-            // MARK: - 4. 下一首 (右二)
+            // MARK: - 4. 下一首 (右二 - 视觉降重)
             Button(action: {
                 #if os(iOS)
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -92,7 +103,8 @@ struct PlaybackControls: View {
                 playerService.next()
             }) {
                 Image(systemName: "forward.fill")
-                    .font(.system(size: size * 0.65))
+                    .font(.system(size: size * 0.7, weight: .regular))
+                    .foregroundColor(.white.opacity(0.9))
                     .frame(width: size, height: size)
             }
             .buttonStyle(BouncyPlaybackButtonStyle())
@@ -107,13 +119,13 @@ struct PlaybackControls: View {
                 onQueueTap?()
             } label: {
                 Image(systemName: "music.note.list")
-                    .font(.system(size: size * 0.55))
-                    .foregroundStyle(onQueueTap == nil ? Color.secondary.opacity(0.5) : Color.white.opacity(0.8))
+                    .font(.system(size: size * 0.6, weight: .medium))
+                    .foregroundStyle(onQueueTap == nil ? Color.secondary.opacity(0.5) : Color.white.opacity(0.6))
                     .frame(width: size, height: size)
             }
             .buttonStyle(BouncyPlaybackButtonStyle())
             .disabled(onQueueTap == nil)
         }
-        .frame(maxWidth: 320)
+        .frame(maxWidth: 340) // 稍微放宽一点，让大按钮有呼吸空间
     }
 }

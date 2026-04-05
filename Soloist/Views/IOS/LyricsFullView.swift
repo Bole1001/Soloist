@@ -11,6 +11,7 @@ import Combine
 struct LyricsFullView: View {
     @ObservedObject var playerService: AudioPlayerService
     @Binding var showLyrics: Bool
+    @EnvironmentObject var userPlaylistManager: UserPlaylistManager
     // 局部状态，专门控制播放列表弹窗的显示
     @State private var showQueueSheet: Bool = false
     let artworkData: Data?
@@ -28,13 +29,31 @@ struct LyricsFullView: View {
                 
                 // 2. 内容层
                 VStack(spacing: 0) {
-                    // 顶部收起栏
-                    Capsule()
-                        .fill(Color.white.opacity(0.2))
-                        .frame(width: 40, height: 4)
-                        .padding(.top, 10)
-                        .padding(.bottom, 20)
-                        .onTapGesture { showLyrics = false }
+                    // 顶部收起栏与操作按钮区
+                    ZStack(alignment: .center) {
+                        // 居中的收起手柄 (保持不变)
+                        Capsule()
+                            .fill(Color.white.opacity(0.2))
+                            .frame(width: 40, height: 4)
+                            .onTapGesture { showLyrics = false }
+                        
+                        HStack {
+                            Spacer()
+                            if let song = playerService.currentSong {
+                                AddToPlaylistMenu(song: song) {
+                                    Image(systemName: "ellipsis")
+                                        .font(.system(size: 20, weight: .bold)) // 增加字重保证在复杂背景下的可读性，但不加圆圈
+                                        .foregroundColor(.white.opacity(0.8)) // 稍微增加一点不透明度，保证可读
+                                        .frame(width: 44, height: 44) // 保持 44pt 的达标触控热区
+                                        .contentShape(Rectangle()) // 扩大点击判定范围
+                                }
+                                .buttonStyle(.plain) // 必须加，确保 Menu 样式干净
+                            }
+                        }
+                        .padding(.trailing, 20) // 保持与边缘的距离
+                    }
+                    .padding(.top, 10)
+                    .padding(.bottom, 20)
 
                     // 封面与歌曲信息区 (永远居中，自然收缩不遮挡)
                     VStack(spacing: isImmersive ? 15 : 25) {
