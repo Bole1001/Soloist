@@ -17,84 +17,130 @@ struct PlaylistDetailView: View {
     let title: String
     let songIDs: [String]
     
-    // 可选参数：用于区分是红心列表还是普通歌单，以便支持删歌等特定操作
     var isFavoriteList: Bool = false
     var playlistID: UUID? = nil
     
-    // 核心水合计算属性：将 String ID 映射为真实的 Song 对象
+    // 直接使用 O(1) 的哈希字典进行极速水合
     private var hydratedSongs: [Song] {
-        // 利用 compactMap，如果本地库里找不到这个 ID，就自动过滤掉这首“死歌”
         songIDs.compactMap { id in
-            localLibrary.songs.first { $0.id == id }
+            localLibrary.songDictionary[id]
         }
     }
     
     var body: some View {
-        List {
+        Group {
             if hydratedSongs.isEmpty {
-                Text("列表为空")
-                    .foregroundColor(.secondary)
-                    .listRowBackground(Color.clear)
+                VStack(spacing: 12) {
+                    Image(systemName: "music.note.list")
+                        .font(.system(size: 40))
+                        .foregroundColor(.secondary.opacity(0.5))
+                    Text("列表为空")
+                        .foregroundColor(.secondary)
+                }
             } else {
-                // 顶部播放全部按钮
-                Section {
-                    Button(action: {
-                        #if os(iOS)
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        #endif
-                        // 将整个水合后的歌单灌入播放引擎，并从第一首开始播
-                        if let firstSong = hydratedSongs.first {
-                            playerService.play(song: firstSong, playlist: hydratedSongs)
+                List {
+                    // MARK: - 1. 顶部操作面板 (Apple Music 规范)
+                    Section {
+                        HStack(spacing: 16) {
+                            // 播放全部大按钮
+                            Button(action: {
+                                #if os(iOS)
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                #endif
+                                if let firstSong = hydratedSongs.first {
+                                    // 强制关闭随机模式，按列表顺序播放
+                                    playerService.isShuffleMode = false
+                                    playerService.play(song: firstSong, playlist: hydratedSongs)
+                                }
+                            }) {
+                                HStack {
+                                    Image(systemName: "play.fill")
+                                    Text("播放")
+                                        .fontWeight(.semibold)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color.gray.opacity(0.15))
+                                .foregroundColor(.blue)
+                                .cornerRadius(10)
+                            }
+                            // 必须阻断 List 点击劫持
+                            .buttonStyle(.plain)
+                            
+                            // 随机播放大按钮
+                            Button(action: {
+                                #if os(iOS)
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                #endif
+                                if let firstSong = hydratedSongs.randomElement() {
+                                    // 强制开启随机模式
+                                    playerService.isShuffleMode = true
+                                    playerService.play(song: firstSong, playlist: hydratedSongs)
+                                }
+                            }) {
+                                HStack {
+                                    Image(systemName: "shuffle")
+                                    Text("随机播放")
+                                        .fontWeight(.semibold)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color.gray.opacity(0.15))
+                                .foregroundColor(.blue)
+                                .cornerRadius(10)
+                            }
+                            // 必须阻断 List 点击劫持
+                            .buttonStyle(.plain)
                         }
-                    }) {
-                        HStack {
-                            Spacer()
-                            Image(systemName: "play.fill")
-                            Text("播放全部")
-                            Spacer()
-                        }
-                        .font(.headline)
-                        .foregroundColor(.blue)
                         .padding(.vertical, 4)
                     }
-                }
-                
-                // 歌曲列表区 (利用你封装的跨平台 Shared Component)
-                Section {
-                    ForEach(hydratedSongs) { song in
-                        let isPlaying = playerService.currentSong?.id == song.id
-                        
-                        // 你的高度复用组件
-                        SongListRow(
-                            song: song,
-                            isPlaying: isPlaying,
-                            onPlay: {
-                                // 点击单曲时，同样要把整个列表作为上下文传给播放器
-                                playerService.play(song: song, playlist: hydratedSongs)
-                            },
-                            onAdd: {
-                                // 点击加号：这里可以后续接管“添加到另一个歌单”的逻辑
-                                // 目前我们可以先让它插队播放
-                                playerService.addToNext(song: song)
-                            }
-                        )
-                        // 侧滑删除 (从当前歌单中移除)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
-                                if isFavoriteList {
-                                    userPlaylistManager.toggleFavorite(songID: song.id)
-                                } else if let pid = playlistID {
-                                    userPlaylistManager.removeSong(song.id, fromPlaylist: pid)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+                    .listRowSeparator(.hidden) // 隐藏头部的分割线
+                    
+                    // MARK: - 2. 歌曲列表区
+                    Section {
+                        ForEach(hydratedSongs) { song in
+                            let isPlaying = playerService.currentSong?.id == song.id
+                            
+                            SongListRow(
+                                song: song,
+                                isPlaying: isPlaying,
+                                onPlay: {
+                                    playerService.play(song: song, playlist: hydratedSongs)
+                                },
+                                onAdd: {
+                                    playerService.addToNext(song: song)
                                 }
-                            } label: {
-                                Label("移除", systemImage: "trash")
+                            )
+                            .buttonStyle(.plain)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    if isFavoriteList {
+                                        userPlaylistManager.toggleFavorite(songID: song.id)
+                                    } else if let pid = playlistID {
+                                        userPlaylistManager.removeSong(song.id, fromPlaylist: pid)
+                                    }
+                                } label: {
+                                    Label("移除", systemImage: "trash")
+                                }
+                            }
+                        } // ⚠️ 严格审查点：ForEach 的大括号必须在这里绝对闭合！
+                        // ✨ .onMove 必须依附在 ForEach 上，而不是内部的 Row 上
+                        .onMove { source, destination in
+                            if isFavoriteList {
+                                userPlaylistManager.moveFavorites(from: source, to: destination)
+                            } else if let pid = playlistID {
+                                userPlaylistManager.moveSongs(inPlaylist: pid, from: source, to: destination)
                             }
                         }
                     }
                 }
+                .listStyle(.plain)
             }
         }
-        .listStyle(.plain)
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.large)
     }

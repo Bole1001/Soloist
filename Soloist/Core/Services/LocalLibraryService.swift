@@ -20,6 +20,9 @@ class LocalLibraryService: ObservableObject {
     /// 当前加载的所有歌曲列表
     @Published var songs: [Song] = []
     
+    /// 用于 O(1) 极速查询的哈希字典，必须与 songs 严格保持同步
+    @Published var songDictionary: [String: Song] = [:]
+    
     // MARK: - Private Properties
     
     /// 记录当前正在访问的文件夹 URL，用于后续释放权限
@@ -35,6 +38,8 @@ class LocalLibraryService: ObservableObject {
         if !cachedSongs.isEmpty {
             self.songs = cachedSongs
         }
+        
+        self.songDictionary = Dictionary(uniqueKeysWithValues: cachedSongs.map { ($0.id, $0) })
         
         #if os(macOS)
         restorePermission()
@@ -168,6 +173,8 @@ class LocalLibraryService: ObservableObject {
             // 5. 回到主线程更新 UI
             await MainActor.run {
                 self.songs = parsedSongs
+                // 核心注入：瞬间建立 O(1) 索引字典
+                self.songDictionary = Dictionary(uniqueKeysWithValues: parsedSongs.map { ($0.id, $0) })
                 print("✅ [LocalLibrary] 扫描完成，共加载 \(self.songs.count) 首歌")
             }
         }
@@ -222,7 +229,13 @@ class LocalLibraryService: ObservableObject {
         }
         
         // 3. 从内存数组中移除
+        let removedSongs = offsets.map { songs[$0] }
         songs.remove(atOffsets: offsets)
+        
+        // 同步移除字典中的数据
+        for song in removedSongs {
+            songDictionary.removeValue(forKey: song.id)
+        }
         
         // 4. 更新持久化缓存
         LibraryPersistenceService.saveLibrary(songs: songs)

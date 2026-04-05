@@ -7,6 +7,7 @@
 
 import Foundation
 import Combine
+import SwiftUI
 
 /// 用户歌单模型
 struct UserPlaylist: Identifiable, Codable {
@@ -19,7 +20,7 @@ struct UserPlaylist: Identifiable, Codable {
 /// 职责: 管理红心收藏、用户自建歌单的内存状态与 JSON 落盘
 class UserPlaylistManager: ObservableObject {
     
-    @Published var favoriteSongIDs: Set<String> = [] {
+    @Published var favoriteSongIDs: [String] = [] {
         didSet { saveFavorites() }
     }
     
@@ -53,7 +54,7 @@ class UserPlaylistManager: ObservableObject {
     private func cleanupGhostIDs(validIDs: Set<String>) {
         // 1. 红心去重 (取交集，瞬间剔除无效 ID)
         let oldFavCount = favoriteSongIDs.count
-        favoriteSongIDs.formIntersection(validIDs)
+        favoriteSongIDs.removeAll { !validIDs.contains($0) }
         let favRemoved = oldFavCount - favoriteSongIDs.count
         
         // 2. 歌单去重
@@ -73,25 +74,31 @@ class UserPlaylistManager: ObservableObject {
     // MARK: - Favorites Logic
     
     func toggleFavorite(songID: String) {
-        if favoriteSongIDs.contains(songID) {
-            favoriteSongIDs.remove(songID)
+        if let index = favoriteSongIDs.firstIndex(of: songID) {
+            favoriteSongIDs.remove(at: index) // 已存在则删除
         } else {
-            favoriteSongIDs.insert(songID)
+            favoriteSongIDs.insert(songID, at: 0) // 不存在则插入到最开头（收藏时间倒序）
         }
     }
-    
+
     func isFavorite(songID: String) -> Bool {
-        return favoriteSongIDs.contains(songID)
+        favoriteSongIDs.contains(songID)
     }
-    
+
     private func saveFavorites() {
-        UserDefaults.standard.set(Array(favoriteSongIDs), forKey: "FavoriteSongIDs")
+        // 直接存数组，不再需要 Array() 转换
+        UserDefaults.standard.set(favoriteSongIDs, forKey: "FavoriteSongIDs")
     }
-    
+
     private func loadFavorites() {
         if let savedArray = UserDefaults.standard.stringArray(forKey: "FavoriteSongIDs") {
-            self.favoriteSongIDs = Set(savedArray)
+            self.favoriteSongIDs = savedArray // 直接赋值
         }
+    }
+    
+    /// 红心列表的拖拽排序
+    func moveFavorites(from source: IndexSet, to destination: Int) {
+        favoriteSongIDs.move(fromOffsets: source, toOffset: destination)
     }
     
     // MARK: - Custom Playlists Logic
@@ -116,6 +123,14 @@ class UserPlaylistManager: ObservableObject {
     func removeSong(_ songID: String, fromPlaylist playlistID: UUID) {
         guard let index = customPlaylists.firstIndex(where: { $0.id == playlistID }) else { return }
         customPlaylists[index].songIDs.removeAll { $0 == songID }
+    }
+    
+    /// 拖拽重排自建歌单中的歌曲
+    func moveSongs(inPlaylist playlistID: UUID, from source: IndexSet, to destination: Int) {
+        guard let index = customPlaylists.firstIndex(where: { $0.id == playlistID }) else { return }
+        
+        // 执行数组元素的移动，这会自动触发 @Published 的 didSet 并落盘保存到 JSON
+        customPlaylists[index].songIDs.move(fromOffsets: source, toOffset: destination)
     }
     
     private func saveCustomPlaylists() {

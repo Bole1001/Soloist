@@ -48,7 +48,6 @@
 				Views/IOS/PlaylistDetailView.swift,
 				Views/IOS/QueuePage.swift,
 				Views/IOS/SettingsPage.swift,
-				Views/IOS/VisualizerPage.swift,
 				Views/Shared/ArtworkBackgroundView.swift,
 				Views/Shared/ArtworkView.swift,
 				Views/Shared/PlaybackControls.swift,
@@ -70,7 +69,6 @@
 				Views/IOS/PlaylistDetailView.swift,
 				Views/IOS/QueuePage.swift,
 				Views/IOS/SettingsPage.swift,
-				Views/IOS/VisualizerPage.swift,
 			);
 			target = EE5BDBDF2F29BE4E0055F4D8 /* Soloist */;
 		};
