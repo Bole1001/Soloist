@@ -26,6 +26,8 @@ struct SoloistApp: App {
     
     @StateObject private var userPlaylistManager = UserPlaylistManager()
     
+    @StateObject private var localLibrary = LocalLibraryService()
+    
     // WebDAV 服务状态（仅限 iOS）
     #if os(iOS)
     @StateObject private var webDAVService = WebDAVService()
@@ -43,6 +45,7 @@ struct SoloistApp: App {
                 .environmentObject(playerService)
                 .environmentObject(userPlaylistManager)
                 .environmentObject(playerService.queueManager)
+                .environmentObject(localLibrary)
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
@@ -58,6 +61,7 @@ struct SoloistApp: App {
                 .environmentObject(webDAVService)
                 .environmentObject(userPlaylistManager)
                 .environmentObject(playerService.queueManager)
+                .environmentObject(localLibrary)
         }
         // 生命周期安全锁（退到后台强制断开服务器）
         .onChange(of: scenePhase) { oldPhase, newPhase in

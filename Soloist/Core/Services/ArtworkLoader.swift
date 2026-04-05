@@ -7,61 +7,110 @@
 
 import Foundation
 import AVFoundation
+import ImageIO
+import CryptoKit
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 
 /// 封面加载器 (ArtworkLoader)
-///
-/// 这是一个无状态的工具结构体，专门负责处理繁重的音频元数据读取任务。
-///
-/// **设计哲学**:
-/// 1. **平台无关性**: 只返回 `Data?` 而不是 `UIImage` 或 `NSImage`。这使得该逻辑可以在 Mac、iOS 和 WatchOS 之间 100% 复用。
-/// 2. **异步优先**: 强制使用 `async`，确保文件 I/O 操作永远不会阻塞主线程（UI线程）。
-/// 3. **按需加载**: 只有当 UI 真正显示封面时（在 `.task` 中）才会调用此方法，极大节省了内存。
 struct ArtworkLoader {
+    
+    // MARK: - Cache Architecture
+    
+    private static let memoryCache: NSCache<NSString, NSData> = {
+        let cache = NSCache<NSString, NSData>()
+        cache.countLimit = 300 // 增加索引上限
+        cache.totalCostLimit = 1024 * 1024 * 30 // 压缩后单图极小，30MB 足矣
+        return cache
+    }()
+    
+    private static let diskCacheURL: URL = {
+        let urls = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
+        let cacheDir = urls[0].appendingPathComponent("ArtworkCache_V2")
+        if !FileManager.default.fileExists(atPath: cacheDir.path) {
+            try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true, attributes: nil)
+        }
+        return cacheDir
+    }()
     
     // MARK: - Public API
     
-    /// 异步从音频文件中提取封面图片数据
-    ///
-    /// 该方法会打开指定 URL 的音频文件，解析 ID3 标签或其他元数据容器，
-    /// 查找类型为 `.commonKeyArtwork` 的数据项。
-    ///
-    /// - Parameter song: 需要加载封面的歌曲模型（包含 url）。
-    /// - Returns: 图片的原始二进制数据 (`Data`)。如果文件没有封面或读取失败，返回 `nil`。
     static func loadArtwork(for song: Song) async -> Data? {
-        // 1. 创建资源对象
-        // AVURLAsset 初始化非常快，它只是指向文件，还没开始读取数据。
+        let rawKey = "\(song.artist)-\(song.title)"
+        let cacheKey = SHA256.hash(data: Data(rawKey.utf8)).compactMap { String(format: "%02x", $0) }.joined()
+        let nsKey = NSString(string: cacheKey)
+        
+        // 1. L1 内存拦截
+        if let cachedData = memoryCache.object(forKey: nsKey) {
+            return Data(referencing: cachedData)
+        }
+        
+        // 2. L2 磁盘拦截
+        let fileURL = diskCacheURL.appendingPathComponent(cacheKey)
+        if let diskData = try? Data(contentsOf: fileURL) {
+            memoryCache.setObject(NSData(data: diskData), forKey: nsKey)
+            return diskData
+        }
+        
+        // 3. 原始解析
         let asset = AVURLAsset(url: song.url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: false])
         
         do {
-            // 2. 异步加载元数据 (耗时操作)
-            // 这里使用了 Swift 5.5+ 的新并发 API，替代了旧的 loadValuesAsynchronously
             let metadata = try await asset.load(.metadata)
-            
-            // 3. 遍历元数据查找封面
-            for item in metadata {
-                // AVMetadataKey.commonKeyArtwork 是通用的封面键值，
-                // 它可以兼容 ID3v2 (MP3) 和 iTunes Atom (M4A) 等多种格式。
-                if item.commonKey == .commonKeyArtwork {
+            for item in metadata where item.commonKey == .commonKeyArtwork {
+                
+                var rawData: Data? = try? await item.load(.dataValue)
+                if rawData == nil {
+                    rawData = try? await item.load(.value) as? Data
+                }
+                
+                if let validData = rawData {
+                    // ✨ 优化 2：下采样压缩
+                    // 将原始大图直接转为 120x120 的高质量缩略图（体积约 10-20KB）
+                    guard let compressedData = createThumbnail(from: validData, size: 120) else { return nil }
                     
-                    // 4. 尝试提取数据 (双重保险策略)
+                    memoryCache.setObject(NSData(data: compressedData), forKey: nsKey)
                     
-                    // 策略 A: 尝试使用新版类型安全 API (.dataValue)
-                    if let data = try? await item.load(.dataValue) {
-                        return data
+                    Task.detached(priority: .background) {
+                        try? compressedData.write(to: fileURL)
                     }
-                    // 策略 B: 回退旧版 API (.value)，并尝试转为 Data
-                    // 某些旧编码格式的音频文件可能只能通过这种方式获取
-                    else if let value = try? await item.load(.value) as? Data {
-                        return value
-                    }
+                    
+                    return compressedData
                 }
             }
         } catch {
-            #if DEBUG
-            print("❌ [ArtworkLoader] 读取封面失败: \(song.title) - \(error)")
-            #endif
+            return nil
         }
         
         return nil
+    }
+    
+    // MARK: - High Performance Downsampling
+    
+    /// 使用 ImageIO 进行高性能下采样，避免解码大位图
+    private static func createThumbnail(from data: Data, size: CGFloat) -> Data? {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: size
+        ]
+        
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        
+        // 将压缩后的图片转回 Data
+        #if os(macOS)
+        let bitmapRep = NSBitmapImageRep(cgImage: image)
+        return bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.8])
+        #else
+        let uiImage = UIImage(cgImage: image)
+        return uiImage.jpegData(compressionQuality: 0.8)
+        #endif
     }
 }

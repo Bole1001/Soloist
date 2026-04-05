@@ -31,6 +31,11 @@ class LocalLibraryService: ObservableObject {
     // MARK: - Lifecycle
     
     init() {
+        let cachedSongs = LibraryPersistenceService.loadLibrary()
+        if !cachedSongs.isEmpty {
+            self.songs = cachedSongs
+        }
+        
         #if os(macOS)
         restorePermission()
         #else

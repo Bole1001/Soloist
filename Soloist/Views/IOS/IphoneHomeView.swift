@@ -88,9 +88,9 @@ struct IphoneHomeView: View {
                 }
             }
             
-            // Tab 3: 视效
-            Tab("视效", systemImage: "sparkles.tv", value: "visualizer") {
-                VisualizerPage(artworkData: currentArtworkData)
+            // Tab 3: 歌单
+            Tab("歌单", systemImage: "play.square.stack", value: "playlists") {
+                IphonePlaylistsView()
             }
             
             // Tab 4: 设置
