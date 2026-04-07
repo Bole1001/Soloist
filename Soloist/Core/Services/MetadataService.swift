@@ -8,15 +8,6 @@
 import Foundation
 import AVFoundation
 
-/// 元数据解析服务 (MetadataService)
-///
-/// **职责**: 负责从音频文件中提取轻量级的元数据（标题、艺术家、内嵌歌词）。
-/// **层级**: Core Layer (Service)。
-///
-/// **设计原则**:
-/// 该服务**故意不加载**封面图片 (Artwork)。
-/// 因为在扫描数千首歌曲时，加载图片会导致极其严重的内存峰值和 I/O 阻塞。
-/// 图片加载应推迟到 UI 显示阶段由 `ArtworkLoader` 按需处理。
 struct MetadataService {
     
     /// 解析音频文件的元数据
@@ -61,23 +52,20 @@ struct MetadataService {
             print("⚠️ [MetadataService] 解析元数据失败: \(url.lastPathComponent) - \(error)")
         }
         
-        // 3. 核心修复：仅提取相对路径作为稳定 ID，不再篡改真实 URL
-        let docsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].path
-        var stableID = url.path
+        // 3. 提取与清洗安全数据
+        let safeTitle = title ?? url.deletingPathExtension().lastPathComponent
+        let safeArtist = artist ?? "Unknown Artist"
         
-        if stableID.hasPrefix(docsPath) {
-            stableID = String(stableID.dropFirst(docsPath.count))
-        } else {
-            // 外部挂载目录，直接使用文件名作为稳定 ID
-            stableID = url.lastPathComponent
-        }
+        // 4. 绝对确定性 ID 生成 (Intrinsic ID)
+        // 摒弃所有外部文件路径层级的干扰，使用底层元数据生成唯一防碰撞 ID
+        let stableID = "\(safeArtist)-\(safeTitle)"
         
-        // 4. 返回模型
+        // 5. 返回模型
         return Song(
-            id: stableID,    // 稳定的标识符
-            url: url,        // 保留真实 URL
-            title: title ?? url.deletingPathExtension().lastPathComponent,
-            artist: artist ?? "Unknown Artist",
+            id: stableID,
+            url: url,
+            title: safeTitle,
+            artist: safeArtist,
             lrcURL: nil,
             embeddedLyrics: lyrics
         )

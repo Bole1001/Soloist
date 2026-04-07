@@ -29,4 +29,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         return true
     }
+    
+    // 拦截系统底层 Handoff 唤醒
+        func application(_ application: NSApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([NSUserActivityRestoring]) -> Void) -> Bool {
+            
+            if userActivity.activityType == "com.soloist.handoff.playback" {
+                print("🚀 [AppDelegate] 拦截到接力包，正在通过总线强行空投至视图层...")
+                // 发送系统通知，把 userActivity 塞在 object 里带过去
+                NotificationCenter.default.post(name: .handoffDidArrive, object: userActivity)
+                return true
+            }
+            return false
+        }
+}
+
+extension Notification.Name {
+    /// 跨端接力数据到达通知
+    static let handoffDidArrive = Notification.Name("SoloistHandoffDidArrive")
 }

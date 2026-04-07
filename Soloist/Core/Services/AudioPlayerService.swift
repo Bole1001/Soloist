@@ -28,6 +28,10 @@ class AudioPlayerService: NSObject, ObservableObject {
     /// 全局单例
     static let shared = AudioPlayerService()
     
+    // MARK: - Handoff States
+    private var handoffActivity: NSUserActivity?
+    private var lastHandoffUpdateTime: TimeInterval = 0
+    
     // MARK: - Private Dependencies (Subsystems)
     
     /// 音频引擎：负责底层的 AVAudioPlayer 控制
@@ -49,7 +53,6 @@ class AudioPlayerService: NSObject, ObservableObject {
     @Published var currentLyric: String = ""
     @Published var lyrics: [LyricLine] = []
     
-    // ✨ 核心修正 2：彻底消灭重复的独立状态，全部改为映射到 queueManager 的计算属性
     var isShuffleMode: Bool {
         get { queueManager.isShuffleMode }
         set { queueManager.isShuffleMode = newValue }
@@ -69,8 +72,6 @@ class AudioPlayerService: NSObject, ObservableObject {
     override init() {
         super.init()
         
-        // ✨ 核心修正 3：将 queueManager 的刷新事件，强制桥接到 AudioPlayerService
-        // 确保 UI 无论监听哪个对象，都能实时触发重绘
         queueManager.objectWillChange
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
@@ -101,6 +102,10 @@ class AudioPlayerService: NSObject, ObservableObject {
         engine.onTimeUpdate = { [weak self] time in
             guard let self = self else { return }
             self.currentTime = time
+            if abs(time - self.lastHandoffUpdateTime) > 5.0 {
+                self.updateHandoffState()
+                self.lastHandoffUpdateTime = time
+            }
             if let lineText = self.lyricsManager.findCurrentLine(in: self.lyrics, at: time),
                lineText != self.currentLyric {
                 DispatchQueue.main.async {
@@ -156,6 +161,8 @@ class AudioPlayerService: NSObject, ObservableObject {
             self.loadLyricsForCurrentSong()
         }
         updateSystemInfo()
+        
+        self.updateHandoffState()
     }
     
     func pause() {
@@ -182,6 +189,7 @@ class AudioPlayerService: NSObject, ObservableObject {
         currentTime = 0
         lyrics = []
         updateSystemInfo()
+        self.invalidateHandoff()
     }
     
     func seek(to time: TimeInterval) {
@@ -189,6 +197,7 @@ class AudioPlayerService: NSObject, ObservableObject {
         currentTime = time
         updateLyrics()
         updateSystemInfo()
+        self.updateHandoffState()
     }
     
     func toggleShuffle() {
@@ -305,4 +314,45 @@ class AudioPlayerService: NSObject, ObservableObject {
             }
         }
     }
+    
+    // MARK: - Handoff Logic
+        
+    private func updateHandoffState() {
+        #if os(iOS)
+        // 仅允许 iOS 端执行系统级状态广播
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            guard let song = self.currentSong else {
+                self.handoffActivity?.invalidate()
+                self.handoffActivity = nil
+                return
+            }
+            
+            if self.handoffActivity == nil {
+                self.handoffActivity = NSUserActivity(activityType: "com.soloist.handoff.playback")
+                self.handoffActivity?.isEligibleForHandoff = true
+                self.handoffActivity?.title = "正在播放: \(song.title)"
+            }
+            
+            self.handoffActivity?.addUserInfoEntries(from: [
+                "songID": song.id,
+                "currentTime": self.currentTime
+            ])
+            
+            self.handoffActivity?.becomeCurrent()
+        }
+        #else
+        // macOS 端由于采用 UIElement(Agent) 形态，底层禁止接力广播
+        // 物理切断发射逻辑，节省后台系统资源开销
+        return
+        #endif
+    }
+
+    /// 彻底切断 Handoff 广播 (用于停止播放时)
+    private func invalidateHandoff() {
+        handoffActivity?.invalidate()
+        handoffActivity = nil
+    }
+
 }

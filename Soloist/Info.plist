@@ -6,11 +6,5 @@
 	<array>
 		<string>com.soloist.handoff.playback</string>
 	</array>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>audio</string>
-	</array>
-	<key>UIFileSharingEnabled</key>
-	<true/>
 </dict>
 </plist>
