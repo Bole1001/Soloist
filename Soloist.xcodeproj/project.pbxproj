@@ -23,6 +23,7 @@
 				Assets.xcassets,
 				"Core/Extensions/AudioPlayerService+Interruption.swift",
 				"Core/Extensions/Notification+Ext.swift",
+				Core/Intents/SoloistShortcuts.swift,
 				Core/Models/LyricLine.swift,
 				Core/Models/Song.swift,
 				Core/Services/ArtworkLoader.swift,
