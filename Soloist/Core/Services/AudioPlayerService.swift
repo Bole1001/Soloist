@@ -23,7 +23,7 @@ import UIKit
 /// **单例**: `shared` 实例供全 App 共享状态。
 ///
 /// 它是一个 `ObservableObject`，所有 UI 视图（Mac/iOS/Watch）都通过监听它的 `@Published` 属性来更新界面。
-class AudioPlayerService: NSObject, ObservableObject {
+class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {
     
     /// 全局单例
     static let shared = AudioPlayerService()
@@ -319,10 +319,8 @@ class AudioPlayerService: NSObject, ObservableObject {
         
     private func updateHandoffState() {
         #if os(iOS)
-        // 仅允许 iOS 端执行系统级状态广播
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            
             guard let song = self.currentSong else {
                 self.handoffActivity?.invalidate()
                 self.handoffActivity = nil
@@ -333,18 +331,25 @@ class AudioPlayerService: NSObject, ObservableObject {
                 self.handoffActivity = NSUserActivity(activityType: "com.soloist.handoff.playback")
                 self.handoffActivity?.isEligibleForHandoff = true
                 self.handoffActivity?.title = "正在播放: \(song.title)"
+                self.handoffActivity?.delegate = self
             }
             
+            // 提取防插队滑动窗口 (包含当前歌 + 往后 10 首)
+            let windowIDs = self.queueManager.getSlidingWindowIDs(after: song, limit: 10)
+            
+            // 组装全量播放上下文
             self.handoffActivity?.addUserInfoEntries(from: [
                 "songID": song.id,
-                "currentTime": self.currentTime
+                "currentTime": self.currentTime,
+                "isShuffleMode": self.isShuffleMode,
+                "isLoopMode": self.isLoopMode,
+                "windowIDs": windowIDs
             ])
             
             self.handoffActivity?.becomeCurrent()
+            print("📡 [Handoff 发射端] 已广播状态 | 模式: 随机(\(self.isShuffleMode)) 循环(\(self.isLoopMode)) | 窗口长度: \(windowIDs.count)")
         }
         #else
-        // macOS 端由于采用 UIElement(Agent) 形态，底层禁止接力广播
-        // 物理切断发射逻辑，节省后台系统资源开销
         return
         #endif
     }
@@ -355,4 +360,19 @@ class AudioPlayerService: NSObject, ObservableObject {
         handoffActivity = nil
     }
 
+    // MARK: - NSUserActivityDelegate
+        
+    /// 当 Handoff 载荷被另一台设备成功接管时，系统会回调此方法 (仅在发射端触发)
+    func userActivityWasContinued(_ userActivity: NSUserActivity) {
+        print("📱 [Handoff 发射端] 收到系统回执：Mac 已成功接管音频会话")
+        
+        // 强制切回主线程执行暂停操作，防止后台线程触发 UI 更新崩溃
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if self.isPlaying {
+                print("📱 [Handoff 发射端] 正在自动暂停本机播放...")
+                self.pause()
+            }
+        }
+    }
 }

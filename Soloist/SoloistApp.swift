@@ -16,9 +16,9 @@ struct SoloistApp: App {
     
     // MARK: - App Delegate Integration
     
-    #if os(macOS)
+#if os(macOS)
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    #endif
+#endif
     
     // MARK: - State Management
     
@@ -29,15 +29,15 @@ struct SoloistApp: App {
     @StateObject private var localLibrary = LocalLibraryService()
     
     // WebDAV 服务状态（仅限 iOS）
-    #if os(iOS)
+#if os(iOS)
     @StateObject private var webDAVService = WebDAVService()
     @Environment(\.scenePhase) private var scenePhase
-    #endif
+#endif
     
     var body: some Scene {
         
         // MARK: - macOS Scene Configuration
-        #if os(macOS)
+#if os(macOS)
         
         Window("Soloist", id: "MainWindow") {
             MacHomeView()
@@ -50,7 +50,7 @@ struct SoloistApp: App {
                     if let activity = notification.object as? NSUserActivity {
                         handleHandoff(activity)
                     }
-            }
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
@@ -58,7 +58,7 @@ struct SoloistApp: App {
         }
         
         // MARK: - iOS Scene Configuration
-        #else
+#else
         
         WindowGroup {
             IphoneHomeView()
@@ -76,40 +76,62 @@ struct SoloistApp: App {
             }
         }
         
-        #endif
+#endif
     }
     
     // MARK: - Handoff Hydration Logic
     
-    /// 统一的数据水合与状态还原处理器
     private func handleHandoff(_ userActivity: NSUserActivity) {
-        // 1. 拆解 Payload 数据包
         guard let userInfo = userActivity.userInfo,
               let songID = userInfo["songID"] as? String,
               let targetTime = userInfo["currentTime"] as? TimeInterval else {
-            print("❌ [Handoff] 解析 Payload 失败或数据不完整")
+            print("❌ [Handoff] 解析 Payload 失败")
             return
         }
         
-        print("🔗 [Handoff] 收到接力请求，目标歌曲 ID: \(songID)，进度: \(targetTime)s")
-        
-        // 2. 内存字典 O(1) 极速水合查询
-        // 依赖 localLibrary 初始化时已经从缓存同步加载完毕
         guard let targetSong = localLibrary.songDictionary[songID] else {
-            print("❌ [Handoff] 失败：接收端本地曲库未找到对应的歌曲实体。请检查两端文件是否对齐。")
+            print("❌ [Handoff] 本地曲库未找到歌曲: \(songID)")
             return
         }
         
-        // 3. 执行接力播放引擎调度
+        // 1. 提取上下文状态
+        let isShuffle = userInfo["isShuffleMode"] as? Bool ?? false
+        let isLoop = userInfo["isLoopMode"] as? Bool ?? false
+        let windowIDs = userInfo["windowIDs"] as? [String] ?? [songID]
+        
+        print("🔗 [Handoff] 接管请求 | 目标: \(targetSong.title) | 模式: 随机(\(isShuffle)) 循环(\(isLoop))")
+        
+        // 2. 状态强覆盖
+        playerService.isShuffleMode = isShuffle
+        playerService.isLoopMode = isLoop
+        playerService.queueManager.isShuffleMode = isShuffle
+        playerService.queueManager.isLoopMode = isLoop
+        
+        // 3. 构建物理内存队列 (将手机传来的 ID 数组映射回 Mac 本地的 Song 对象)
+        var reconstructedQueue: [Song] = []
+        for id in windowIDs {
+            if let song = localLibrary.songDictionary[id] {
+                reconstructedQueue.append(song)
+            }
+        }
+        
+        // 4. 底层队列手术级替换 (规避 play 方法的二次洗牌 Bug)
+        if isShuffle {
+            playerService.queueManager.updateShuffledList(reconstructedQueue)
+            // 备份一份到 original，防止关闭随机时列表被清空
+            playerService.queueManager.updateOriginalList(reconstructedQueue)
+        } else {
+            playerService.queueManager.updateOriginalList(reconstructedQueue)
+            playerService.queueManager.updateShuffledList([]) // 清空旧随机列表
+        }
+        
+        // 5. 引擎调度
         if playerService.currentSong?.id == targetSong.id {
-            // 如果两边正在放同一首歌，只同步进度
             playerService.seek(to: targetTime)
             if !playerService.isPlaying { playerService.resume() }
         } else {
-            // 切歌并带参拉起进度
+            // 注意：这里故意不传 playlist 参数，阻止其内部触发 reshuffle
             playerService.play(song: targetSong)
-            
-            // 必须进行微小延迟，确保底层的 AVAudioEngine 节点缓冲建立完成，再执行精准定位
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 playerService.seek(to: targetTime)
             }

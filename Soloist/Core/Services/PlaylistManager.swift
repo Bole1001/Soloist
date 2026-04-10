@@ -140,4 +140,19 @@ class PlaylistManager: ObservableObject {
     func updateShuffledList(_ list: [Song]) {
         self.shuffledPlaylist = list
     }
+    
+    // MARK: - Handoff Sync Helpers
+        
+    /// 获取滑动窗口缓冲 (提取当前歌曲及后续 10 首歌的 ID，保持绝对真实顺序)
+    func getSlidingWindowIDs(after current: Song?, limit: Int = 10) -> [String] {
+        let activeList = isShuffleMode ? shuffledPlaylist : originalPlaylist
+        guard let current = current,
+              let index = activeList.firstIndex(where: { $0.id == current.id }) else {
+            return []
+        }
+        
+        // 我们不截取前面播放过的歌，只取当前歌曲及未来的歌
+        let endIndex = min(index + 1 + limit, activeList.count)
+        return activeList[index..<endIndex].map { $0.id }
+    }
 }
