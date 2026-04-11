@@ -145,6 +145,40 @@ struct WebServerUI {
             document.getElementById('selector').style.padding = '14px';
         }
     };
+
+    // 核心重构：将单个 XMLHttpRequest 封装为 Promise，实现串行控制
+    function uploadSingleFile(file, isOverwrite, currentUploadedBytes, totalBytes, startTime, uiConfig) {
+        return new Promise((resolve) => {
+            const formData = new FormData();
+            formData.append('files', file);
+            if(isOverwrite) formData.append('overwrite', 'true');
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/upload');
+            xhr.timeout = 60000; // 单个文件 60 秒超时，避免死锁
+
+            xhr.upload.onprogress = e => {
+                if(e.lengthComputable){
+                    // 计算全局真实进度
+                    const globalLoaded = currentUploadedBytes + e.loaded;
+                    const percent = (globalLoaded / totalBytes) * 100;
+                    uiConfig.bar.style.width = percent + '%';
+
+                    const elapsed = (Date.now() - startTime) / 1000;
+                    if(elapsed > 0.5) {
+                        const speed = globalLoaded / elapsed;
+                        uiConfig.speedEl.textContent = formatSize(speed) + '/s';
+                    }
+                }
+            };
+
+            xhr.onload = () => resolve(xhr.status === 200);
+            xhr.onerror = () => resolve(false);
+            xhr.ontimeout = () => resolve(false);
+
+            xhr.send(formData);
+        });
+    }
     
     async function startSync(){
       const overwrite = document.getElementById('overwrite').checked;
@@ -160,77 +194,81 @@ struct WebServerUI {
       log.innerHTML = '<span style="color:var(--primary)">正在比对设备指纹...</span>';
     
       try{
+        // 1. 获取现有列表，建立去重索引
         const res = await fetch('/list');
         const existing = new Set(await res.json());
     
-        const formData = new FormData();
-        let upload = 0, skip = 0, totalSize = 0;
+        // 2. 构建传输队列
+        const uploadQueue = [];
+        let skipCount = 0;
+        let totalBytesToUpload = 0;
     
         for(const file of input.files){
           const pureFileName = file.name.split('/').pop();
-          if(pureFileName.startsWith('.')) continue;
+          if(pureFileName.startsWith('.')) continue; // 过滤隐藏文件
           
           if(!overwrite && existing.has(pureFileName)) {
-              skip++;
+              skipCount++;
           } else {
-              formData.append('files', file);
-              upload++;
-              totalSize += file.size;
+              uploadQueue.push(file);
+              totalBytesToUpload += file.size;
           }
         }
     
-        if(upload === 0){
-          log.innerHTML = `<span style="color:#28a745">已自动跳过 ${skip} 个已存在的文件</span>`;
+        // 3. 拦截全跳过状态
+        if(uploadQueue.length === 0){
+          log.innerHTML = `<span style="color:#28a745">已自动跳过 ${skipCount} 个已存在的文件</span>`;
           btn.disabled = false;
           return;
         }
     
-        if(overwrite) formData.append('overwrite','true');
-    
-        log.textContent = `准备传输 ${upload} 个文件 (跳过 ${skip} 个)`;
+        // 4. 初始化 UI
+        log.innerHTML = `正在传输队列: <span id="queueStatus">0 / ${uploadQueue.length}</span>`;
         progContainer.style.display = 'block';
         list.style.display = 'none';
-    
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST','/upload');
-        xhr.timeout = 300000; 
-    
-        let startTime = Date.now();
-    
-        xhr.upload.onprogress = e => {
-          if(e.lengthComputable){
-            const percent = (e.loaded / e.total) * 100;
-            bar.style.width = percent + '%';
-    
-            const elapsed = (Date.now() - startTime) / 1000;
-            if(elapsed > 0.5) {
-                const speed = e.loaded / elapsed;
-                speedEl.textContent = formatSize(speed) + '/s';
+        
+        const uiConfig = { bar, speedEl };
+        let currentUploadedBytes = 0;
+        let successCount = 0;
+        let failCount = 0;
+        const startTime = Date.now();
+        const queueStatusEl = document.getElementById('queueStatus');
+
+        // 5. 核心逻辑：串行出栈上传 (规避 iOS OOM 和网络原子包超时)
+        for (let i = 0; i < uploadQueue.length; i++) {
+            const currentFile = uploadQueue[i];
+            queueStatusEl.textContent = `${i + 1} / ${uploadQueue.length} (${currentFile.name.split('/').pop()})`;
+            
+            const isSuccess = await uploadSingleFile(
+                currentFile, 
+                overwrite, 
+                currentUploadedBytes, 
+                totalBytesToUpload, 
+                startTime, 
+                uiConfig
+            );
+
+            if (isSuccess) {
+                successCount++;
+                currentUploadedBytes += currentFile.size; // 只有成功才把体积计入已完成
+            } else {
+                failCount++;
+                // 失败不计入 currentUploadedBytes，避免进度条超调
             }
-          }
-        };
+        }
+
+        // 6. 传输结束，前端接管结果渲染 (废弃后端的 document.write 行为)
+        const card = document.querySelector('.card');
+        card.innerHTML = `
+            <h2 style="color: #28a745; margin: 0 0 16px;">同步落盘完成</h2>
+            <p style="margin: 8px 0; color: var(--text);">成功新增/覆盖: <strong>${successCount}</strong> 个文件</p>
+            <p style="color: var(--sub); font-size: 14px;">跳过: <strong>${skipCount}</strong> 个文件</p>
+            ${failCount > 0 ? `<p style="color:#dc3545; font-weight:bold;">失败: <strong>${failCount}</strong> 个文件 (由于网络断流或同名冲突)</p>` : ''}
+            <a href="/" style="display: inline-block; margin-top: 24px; padding: 14px 28px; background: var(--primary); color: #fff; text-decoration: none; border-radius: 12px; font-weight: 600;">返回继续</a>
+        `;
     
-        xhr.onload = () => {
-          if (xhr.status === 200) {
-              log.textContent = '传输完成，正在校验落盘...';
-              speedEl.textContent = '完成';
-              bar.style.background = '#28a745';
-              setTimeout(() => {
-                document.open(); document.write(xhr.responseText); document.close();
-              }, 400);
-          } else {
-              log.innerHTML = `<span style="color:#dc3545">服务器错误: ${xhr.status}</span>`;
-              btn.disabled = false;
-          }
-        };
-    
-        xhr.ontimeout = () => { log.innerHTML = '<span style="color:#dc3545">连接超时，请检查同一 Wi-Fi</span>'; btn.disabled = false; };
-        xhr.onerror = () => { log.innerHTML = '<span style="color:#dc3545">网络中断，请保持 App 在前台常亮</span>'; btn.disabled = false; };
-    
-        xhr.send(formData);
-    
-      }catch(e){
-        log.innerHTML = `<span style="color:#dc3545">预检错误: ${e}</span>`;
+      } catch(e) {
+        log.innerHTML = `<span style="color:#dc3545">执行队列崩溃: ${e}</span>`;
         btn.disabled = false;
       }
     }

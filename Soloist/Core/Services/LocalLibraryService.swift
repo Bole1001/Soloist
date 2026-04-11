@@ -39,7 +39,13 @@ class LocalLibraryService: ObservableObject {
             self.songs = cachedSongs
         }
         
-        self.songDictionary = Dictionary(uniqueKeysWithValues: cachedSongs.map { ($0.id, $0) })
+        self.songDictionary = Dictionary(
+            cachedSongs.map { ($0.id, $0) },
+            uniquingKeysWith: { (oldValue, newValue) in
+                // 遇到重复 ID 时，直接保留新值，丢弃旧值，绝对不崩溃
+                return newValue
+            }
+        )
         
         #if os(macOS)
         restorePermission()
@@ -147,11 +153,14 @@ class LocalLibraryService: ObservableObject {
                     activeTasks += 1
                 }
                 
-                var results: [Song] = []
+                // 使用字典来收集并发结果
+                var uniqueResults: [String: Song] = [:]
                 
-                // 只要有任务完成，就立刻塞入下一个新任务，永远保持 15 个并发额度
                 for await song in group {
-                    if let song = song { results.append(song) }
+                    if let song = song {
+                        // 如果有重复 ID 的文件，后解析的会覆盖先解析的
+                        uniqueResults[song.id] = song
+                    }
                     
                     if let fileURL = iterator.next() {
                         group.addTask { await self.parseSingleFile(fileURL) }
@@ -160,22 +169,28 @@ class LocalLibraryService: ObservableObject {
                     }
                 }
                 
-                return results.sorted { $0.title < $1.title }
+                // 将去重后的字典 values 转回数组，并进行排序
+                return Array(uniqueResults.values).sorted { $0.title < $1.title }
             }
             
-            // 3. 持久化缓存
+            // 3. 持久化缓存 (此时传进去的 parsedSongs 已经是绝对去重的了)
             LibraryPersistenceService.saveLibrary(songs: parsedSongs)
             
-            // 4. 广播垃圾回收信号 (发送本次扫描发现的所有合法 ID)
+            // 4. 广播垃圾回收信号
             let validIDs = Set(parsedSongs.map { $0.id })
             NotificationCenter.default.post(name: .libraryDidUpdate, object: nil, userInfo: ["validIDs": validIDs])
             
             // 5. 回到主线程更新 UI
             await MainActor.run {
                 self.songs = parsedSongs
-                // 核心注入：瞬间建立 O(1) 索引字典
-                self.songDictionary = Dictionary(uniqueKeysWithValues: parsedSongs.map { ($0.id, $0) })
-                print("✅ [LocalLibrary] 扫描完成，共加载 \(self.songs.count) 首歌")
+                
+                // 使用 uniquingKeysWith 构造字典，彻底封死崩溃路径
+                self.songDictionary = Dictionary(
+                    parsedSongs.map { ($0.id, $0) },
+                    uniquingKeysWith: { (old, new) in new }
+                )
+                
+                print("✅ [LocalLibrary] 扫描完成，共加载 \(self.songs.count) 首歌 (已过滤重复元数据)")
             }
         }
     }
