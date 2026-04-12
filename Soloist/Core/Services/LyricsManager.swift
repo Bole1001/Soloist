@@ -18,6 +18,8 @@ import Foundation
 /// 3. **网络补全**: 如果本地无数据，尝试通过 `LyricsFetcher` 在线搜索，下载成功后会自动保存到本地。
 class LyricsManager {
     
+    private var currentSearchToken: UUID = UUID()
+    
     // MARK: - Public API
     
     /// 查找当前播放时间对应的歌词行
@@ -29,7 +31,7 @@ class LyricsManager {
     func findCurrentLine(in lyrics: [LyricLine], at time: TimeInterval) -> String? {
         // 查找最后一个开始时间小于或等于当前时间的歌词行
         // 假设 lyrics 数组已经按 startTime 升序排列
-        return lyrics.last(where: { $0.startTime <= time })?.text
+        return lyrics.last(where: { $0.startTime <= time + 0.1 })?.text
     }
 
     /// 异步加载歌词 (核心业务逻辑)
@@ -44,7 +46,10 @@ class LyricsManager {
     ///     - updatedSong: 如果触发了网络下载并保存，会返回更新了 `lrcURL` 的新 Song 对象；否则返回 nil。
     func fetchLyrics(for song: Song, duration: TimeInterval, completion: @escaping ([LyricLine], Song?) -> Void) {
         
-        // 策略 A: 检查本地关联的 LRC 文件
+        let requestToken = UUID()
+        self.currentSearchToken = requestToken
+        
+        // 策略 A: 检查本地关联的 LRC 文件 (基于 LocalLibrary 扫描时建立的索引)
         if let lrcURL = song.lrcURL {
             let parsed = LRCParser.parse(url: lrcURL)
             if !parsed.isEmpty {
@@ -64,8 +69,14 @@ class LyricsManager {
         
         // 策略 C: 执行网络搜索
         LyricsFetcher.search(title: song.title, artist: song.artist, album: "", duration: duration) { [weak self] content in
-            guard let self = self, let content = content else {
-                // 搜索失败或无网络，返回空结果
+            guard let self = self else { return }
+            
+            guard self.currentSearchToken == requestToken else {
+                print("🛑 [LyricsManager] 拦截到废弃的网络回调，已丢弃 (\(song.title))")
+                return
+            }
+            
+            guard let content = content else {
                 completion([], nil)
                 return
             }
@@ -73,7 +84,7 @@ class LyricsManager {
             let parsed = LRCParser.parse(content: content)
             
             if !parsed.isEmpty {
-                // 下载成功，立即写入硬盘持久化，并更新 Song 模型
+                // 下载成功，执行双端统一的落盘逻辑
                 self.saveLrcFile(content: content, for: song) { updatedSong in
                     completion(parsed, updatedSong)
                 }
@@ -85,57 +96,34 @@ class LyricsManager {
     
     // MARK: - Private Helpers
         
-    /// 将歌词内容保存到本地文件系统
-    ///
-    /// - macOS: 保存到音频同级目录的 Lyrics 文件夹中。
-    /// - iOS: ❌ 不保存。用户决定手动管理，此处仅做透传，不执行写入操作。
+    /// 将歌词内容保存到本地文件系统 (macOS & iOS 逻辑统一)
     private func saveLrcFile(content: String, for song: Song, completion: @escaping (Song) -> Void) {
-        
-        // 💻 macOS 专属逻辑：执行保存
-        #if os(macOS)
         let fileManager = FileManager.default
         
-        // 构建路径：./Lyrics/SongName.lrc
+        // 构建统一路径： 音频所在目录 / Lyrics / SongName.lrc
         let parentDirectory = song.url.deletingLastPathComponent()
         let lyricsFolderURL = parentDirectory.appendingPathComponent("Lyrics", isDirectory: true)
         let fileName = song.url.deletingPathExtension().lastPathComponent + ".lrc"
         let lrcURL = lyricsFolderURL.appendingPathComponent(fileName)
         
         do {
-            // 如果目录不存在，先创建目录
+            // 如果 Lyrics 目录不存在，则级联创建
             if !fileManager.fileExists(atPath: lyricsFolderURL.path) {
                 try fileManager.createDirectory(at: lyricsFolderURL, withIntermediateDirectories: true, attributes: nil)
             }
             
-            // 写入文件
+            // 原子化写入文件
             try content.write(to: lrcURL, atomically: true, encoding: .utf8)
-            print("💾 [LyricsManager] 歌词已保存到本地: \(lrcURL.lastPathComponent)")
+            print("💾 [LyricsManager] 歌词已统一落盘至本地: \(lrcURL.path)")
             
-            // 生成带有新 LRC 路径的 Song 对象
-            let updatedSong = Song(
-                id: song.id,
-                url: song.url,
-                title: song.title,
-                artist: song.artist,
-                lrcURL: lrcURL, // ✅ 更新路径
-                embeddedLyrics: song.embeddedLyrics
-            )
-            
-            completion(updatedSong)
+            // 生成带有新 LRC 路径的 Song 对象返回
+            var updatedSong = song
+                updatedSong.lrcURL = lrcURL
+                completion(updatedSong)
             
         } catch {
-            print("⚠️ [LyricsManager] 歌词保存失败: \(error)")
-            // 保存失败也返回原对象，不影响显示
+            print("⚠️ [LyricsManager] 歌词落盘失败: \(error)")
             completion(song)
         }
-
-        // 📱 iOS 逻辑：直接放弃保存
-        #else
-        // 不做任何文件操作，直接把原来的 song 对象还回去。
-        // 这样 UI 依然能显示刚才下载的歌词（因为它是从内存传过去的），
-        // 但下次重启 App 后，这首歌依然没有关联的本地 LRC 文件。
-        print("📱 [LyricsManager] iOS 端跳过自动保存，仅在内存中显示")
-        completion(song)
-        #endif
     }
 }
