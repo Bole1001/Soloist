@@ -7,12 +7,7 @@
 
 import Foundation
 import MediaPlayer
-
-#if os(macOS)
-import AppKit
-#else
 import UIKit
-#endif
 
 /// 系统媒体管家 (SystemMediaHandler)
 ///
@@ -146,17 +141,10 @@ class SystemMediaHandler {
     
     /// 跨平台创建 MPMediaItemArtwork 对象
     ///
-    /// 因为 iOS 使用 UIImage，Mac 使用 NSImage，这里做了统一封装。
+    /// 使用 UIImage 创建 artwork。
     private func createArtwork(from data: Data) -> MPMediaItemArtwork? {
-        #if os(macOS)
-        // macOS 实现
-        guard let image = NSImage(data: data) else { return nil }
-        // 注意：macOS 版的 init 方法与 iOS 略有不同，通常直接支持，但为了保险起见使用标准 block 初始化
-        return MPMediaItemArtwork(boundsSize: image.size) { _ in return image }
-        #else
         // iOS / watchOS 实现
         guard let image = UIImage(data: data) else { return nil }
         return MPMediaItemArtwork(boundsSize: image.size) { _ in return image }
-        #endif
     }
 }

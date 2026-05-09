@@ -6,15 +6,9 @@
 //
 
 import SwiftUI
-
-// MARK: - Platform Adaptation
-#if os(macOS)
-import AppKit
-typealias SongRowImage = NSImage
-#else
 import UIKit
+
 typealias SongRowImage = UIImage
-#endif
 
 struct SongListRow: View {
     // MARK: - Parameters
@@ -29,25 +23,13 @@ struct SongListRow: View {
     // MARK: - Local State
     @State private var rowArtwork: Data? = nil
     
-    #if os(macOS)
-    @State private var isHovering: Bool = false
-    #endif
-    
     // 辅助计算属性 1
     private var shouldShowOverlay: Bool {
-        #if os(macOS)
-        return isPlaying || isHovering
-        #else
         return isPlaying
-        #endif
     }
     
     private var isHoveringForStyle: Bool {
-        #if os(macOS)
-        return isHovering
-        #else
         return false
-        #endif
     }
     
     var body: some View {
@@ -57,11 +39,7 @@ struct SongListRow: View {
                 // MARK: - 1. Artwork Section
                 ZStack {
                     if let data = rowArtwork, let image = SongRowImage(data: data) {
-                        #if os(macOS)
-                        Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
-                        #else
                         Image(uiImage: image).resizable().aspectRatio(contentMode: .fill)
-                        #endif
                     } else {
                         Rectangle()
                             .fill(.ultraThinMaterial)
@@ -72,17 +50,10 @@ struct SongListRow: View {
                         Color.black.opacity(0.4)
                             .transition(.opacity)
                         
-                        #if os(macOS)
-                        Image(systemName: isPlaying ? "speaker.wave.3.fill" : "play.fill")
-                            .font(.title2)
-                            .foregroundColor(.white)
-                            .shadow(radius: 2)
-                        #else
                         Image(systemName: "speaker.wave.3.fill")
                             .font(.title2)
                             .foregroundColor(.white)
                             .shadow(radius: 2)
-                        #endif
                     }
                 }
                 .frame(width: 48, height: 48)
@@ -124,22 +95,13 @@ struct SongListRow: View {
             .contentShape(Rectangle())
         }
         
-        .buttonStyle(SongRowButtonStyle(isPlaying: isPlaying, isHovering: isHoveringForStyle))
-        
-        #if os(macOS)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                self.isHovering = hovering
-            }
-        }
-        #endif
+        .buttonStyle(SongRowButtonStyle(isPlaying: isPlaying))
     }
 }
 
 // MARK: - Custom Button Style
 struct SongRowButtonStyle: ButtonStyle {
     let isPlaying: Bool
-    let isHovering: Bool
     
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -157,9 +119,6 @@ struct SongRowButtonStyle: ButtonStyle {
         }
         if isPressed {
             return Color.gray.opacity(0.2)
-        }
-        if isHovering {
-            return Color.gray.opacity(0.1)
         }
         return Color.clear
     }

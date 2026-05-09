@@ -47,12 +47,8 @@ class LocalLibraryService: ObservableObject {
             }
         )
         
-        #if os(macOS)
-        restorePermission()
-        #else
         // iOS 启动时，直接扫描 Documents 目录 (加载 iTunes 共享或上次导入的文件)
         //loadLocalDocuments()
-        #endif
     }
     
     /// 析构时自动释放权限，防止资源泄漏
@@ -69,11 +65,7 @@ class LocalLibraryService: ObservableObject {
     
     func scanAndSavePermission(at url: URL) {
         do {
-            #if os(macOS)
-            let options: URL.BookmarkCreationOptions = .withSecurityScope
-            #else
             let options: URL.BookmarkCreationOptions = []
-            #endif
             
             let bookmarkData = try url.bookmarkData(options: options, includingResourceValuesForKeys: nil, relativeTo: nil)
             UserDefaults.standard.set(bookmarkData, forKey: "UserMusicFolderBookmark")
@@ -87,11 +79,7 @@ class LocalLibraryService: ObservableObject {
         guard let bookmarkData = UserDefaults.standard.data(forKey: "UserMusicFolderBookmark") else { return }
         var isStale = false
         
-        #if os(macOS)
-        let options: URL.BookmarkResolutionOptions = .withSecurityScope
-        #else
         let options: URL.BookmarkResolutionOptions = []
-        #endif
         
         if let url = try? URL(resolvingBookmarkData: bookmarkData, options: options, relativeTo: nil, bookmarkDataIsStale: &isStale), !isStale {
             startAccessing(url: url, forceScan: false)

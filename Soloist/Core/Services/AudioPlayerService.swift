@@ -9,12 +9,7 @@ import Foundation
 import Combine
 import MediaPlayer
 import SwiftUI
-
-#if os(macOS)
-import AppKit
-#else
 import UIKit
-#endif
 
 /// 音频播放服务 (AudioPlayerService)
 ///

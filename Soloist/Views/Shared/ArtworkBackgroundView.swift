@@ -9,13 +9,8 @@ import SwiftUI
 
 // MARK: - 跨平台适配层
 // 统一不同平台的图片类类型别名，方便后续逻辑复用
-#if os(macOS)
-import AppKit
-typealias BgImage = NSImage
-#else
 import UIKit
 typealias BgImage = UIImage
-#endif
 
 /// 动态封面背景视图 (ArtworkBackgroundView)
 ///
@@ -41,17 +36,6 @@ struct ArtworkBackgroundView: View {
             if let data = artworkData, let image = BgImage(data: data) {
                 GeometryReader { geo in
                     // 根据平台特性构建 Image 视图
-                    #if os(macOS)
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        // 🚀 性能关键: 启用 Metal 离屏渲染
-                        // 高斯模糊是非常消耗 GPU 的操作，如果不加此修饰符，可能会导致 UI 掉帧
-                        .drawingGroup()
-                        .blur(radius: 60)
-                        .overlay(Color.black.opacity(0.4)) // 压暗处理，确保前景文字清晰可读
-                    #else
                     Image(uiImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -59,7 +43,6 @@ struct ArtworkBackgroundView: View {
                         .drawingGroup()
                         .blur(radius: 60)
                         .overlay(Color.black.opacity(0.4))
-                    #endif
                 }
                 .ignoresSafeArea() // 铺满全屏，覆盖状态栏和安全区域
             } else {

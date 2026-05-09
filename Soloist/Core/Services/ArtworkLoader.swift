@@ -9,11 +9,7 @@ import Foundation
 import AVFoundation
 import ImageIO
 import CryptoKit
-#if os(macOS)
-import AppKit
-#else
 import UIKit
-#endif
 
 /// 封面加载器 (ArtworkLoader)
 struct ArtworkLoader {
@@ -105,12 +101,7 @@ struct ArtworkLoader {
         }
         
         // 将压缩后的图片转回 Data
-        #if os(macOS)
-        let bitmapRep = NSBitmapImageRep(cgImage: image)
-        return bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.8])
-        #else
         let uiImage = UIImage(cgImage: image)
         return uiImage.jpegData(compressionQuality: 0.8)
-        #endif
     }
 }

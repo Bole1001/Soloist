@@ -7,18 +7,8 @@
 
 import SwiftUI
 
-#if os(macOS)
-import AppKit
-#endif
-
 @main
 struct SoloistApp: App {
-    
-    // MARK: - App Delegate Integration
-    
-#if os(macOS)
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-#endif
     
     // MARK: - State Management
     
@@ -35,31 +25,6 @@ struct SoloistApp: App {
 #endif
     
     var body: some Scene {
-        
-        // MARK: - macOS Scene Configuration
-#if os(macOS)
-        
-        Window("Soloist", id: "MainWindow") {
-            MacHomeView()
-                .background(VisualEffect().ignoresSafeArea())
-                .environmentObject(playerService)
-                .environmentObject(userPlaylistManager)
-                .environmentObject(playerService.queueManager)
-                .environmentObject(localLibrary)
-                .onReceive(NotificationCenter.default.publisher(for: .handoffDidArrive)) { notification in
-                    if let activity = notification.object as? NSUserActivity {
-                        handleHandoff(activity)
-                    }
-                }
-        }
-        .windowStyle(.hiddenTitleBar)
-        .commands {
-            CommandGroup(replacing: .newItem) { }
-        }
-        
-        // MARK: - iOS Scene Configuration
-#else
-        
         WindowGroup {
             IphoneHomeView()
                 .environmentObject(playerService)
@@ -75,8 +40,6 @@ struct SoloistApp: App {
                 webDAVService.stopServer()
             }
         }
-        
-#endif
     }
     
     // MARK: - Handoff Hydration Logic
@@ -138,19 +101,3 @@ struct SoloistApp: App {
         }
     }
 }
-
-// MARK: - Helper Views (macOS)
-#if os(macOS)
-struct VisualEffect: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.blendingMode = .behindWindow
-        view.state = .active
-        view.material = .sidebar
-        return view
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-    }
-}
-#endif

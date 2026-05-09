@@ -8,13 +8,8 @@
 import SwiftUI
 
 // MARK: - Platform Adaptation
-#if os(macOS)
-import AppKit
-typealias PlatformImage = NSImage
-#else
 import UIKit
 typealias PlatformImage = UIImage
-#endif
 
 /// 全局缓存单例
 private class ArtworkCache {
@@ -58,17 +53,10 @@ struct ArtworkView: View {
             
             // 2. 封面图片层
             if let data = currentArtwork, let image = PlatformImage(data: data) {
-                #if os(macOS)
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .transition(.opacity.animation(.easeInOut(duration: 0.3)))
-                #else
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .transition(.opacity.animation(.easeInOut(duration: 0.3)))
-                #endif
             }
         }
         // 强制约束尺寸
