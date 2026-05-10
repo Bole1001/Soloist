@@ -30,8 +30,17 @@ xcuserdata/
 
 ## macOS specific
 .DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
 
 ## Workspace
 *.xcworkspace/xcuserdata/
+
+## Swift Package Manager (关键补充)
+.build/
+.swiftpm/xcode/xcuserdata/
+.swiftpm/xcode/package.xcworkspace/xcuserdata/
 
 my_plan.md
