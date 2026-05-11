@@ -30,6 +30,7 @@ class PhantomGuard {
     var currentLyrics: [LyricLine] = []
     var currentLineIndex: Int? = nil
     var currentPlaybackTime: Double = 0.0
+    var currentTrackLocation: String = ""
     
     @ObservationIgnored private let musicMonitor = MusicMonitor()
     @ObservationIgnored private let menuBarManager = MenuBarManager.shared
@@ -55,7 +56,7 @@ class PhantomGuard {
     }
     
     private func setupBindings() {
-        // 核心修复：当监听到 Music 启动时，同步执行 UI 唤醒
+        // 当监听到 Music 启动时，同步执行 UI 唤醒
         musicMonitor.onMusicAppLaunched = { [weak self] in
             guard let self = self else { return }
             print("🚀 监测到 Apple Music 启动")
@@ -68,22 +69,24 @@ class PhantomGuard {
         musicMonitor.onTrackChanged = { [weak self] state, location in
             guard let self = self else { return }
             
-            let isTrackChanged = (self.playbackState != state && state == "Playing") ||
-                                 (self.currentLyrics.isEmpty && state == "Playing")
+            let isRealTrackChange = (self.currentTrackLocation != location && !location.isEmpty)
             
             self.playbackState = state
             
             if state == "Playing" {
-                if let url = URL(string: location) {
-                    let songName = url.deletingPathExtension().lastPathComponent
-                    self.menuBarManager.updateMenuInfo(text: "🎵 \(songName)")
-                }
-                
-                if isTrackChanged {
-                    print("📁 检测到切歌，重新加载: \(location)")
+                if isRealTrackChange {
+                    print("📁 切歌重载！旧: \(self.currentTrackLocation) -> 新: \(location)")
+                    self.currentTrackLocation = location
+                    
+                    if let url = URL(string: location) {
+                        let songName = url.deletingPathExtension().lastPathComponent
+                        self.menuBarManager.updateMenuInfo(text: "\(songName)")
+                    }
+                    
                     self.currentLyrics = LyricEngine.loadLyrics(for: location)
                     self.currentLineIndex = nil
                 }
+                
                 self.startTimeGear()
             } else {
                 self.stopTimeGear()
@@ -119,6 +122,7 @@ class PhantomGuard {
                 self.playbackState = "Stopped"
                 self.currentLyrics = []
                 self.currentLineIndex = nil
+                self.currentTrackLocation = ""
                 
                 DispatchQueue.main.async {
                     LyricsWindowManager.shared.hide()
@@ -192,7 +196,6 @@ class PhantomGuard {
         if apps.contains(where: { $0.bundleIdentifier == "com.apple.Music" }) {
             isAppleMusicRunning = true
             
-            // 修复点：调用统一的 UI 唤醒逻辑
             refreshUIComponents()
             
             if let _ = MusicController.getCurrentPosition() {
