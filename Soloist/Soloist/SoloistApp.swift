@@ -64,11 +64,9 @@ struct SoloistApp: App {
         
         print("🔗 [Handoff] 接管请求 | 目标: \(targetSong.title) | 模式: 随机(\(isShuffle)) 循环(\(isLoop))")
         
-        // 2. 状态强覆盖
+        // 2. 状态强覆盖（仅通过 playerService 代理，避免重复赋值）
         playerService.isShuffleMode = isShuffle
         playerService.isLoopMode = isLoop
-        playerService.queueManager.isShuffleMode = isShuffle
-        playerService.queueManager.isLoopMode = isLoop
         
         // 3. 构建物理内存队列 (将手机传来的 ID 数组映射回 Mac 本地的 Song 对象)
         var reconstructedQueue: [Song] = []
