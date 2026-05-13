@@ -34,9 +34,11 @@ struct SoloistApp: App {
                 .environmentObject(localLibrary)
                 .onContinueUserActivity("com.soloist.handoff.playback", perform: handleHandoff)
         }
-        // 生命周期安全锁（退到后台强制断开服务器）
+        // 生命周期管理：后台停止服务器，前台恢复服务器
         .onChange(of: scenePhase) { oldPhase, newPhase in
-            if newPhase == .background {
+            if newPhase == .active {
+                webDAVService.startServer()
+            } else if newPhase == .background {
                 webDAVService.stopServer()
             }
         }
