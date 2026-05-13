@@ -96,7 +96,9 @@ class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {
     private func setupEngineCallbacks() {
         engine.onTimeUpdate = { [weak self] time in
             guard let self = self else { return }
-            self.currentTime = time
+            DispatchQueue.main.async {
+                self.currentTime = time
+            }
             if abs(time - self.lastHandoffUpdateTime) > 5.0 {
                 self.updateHandoffState()
                 self.lastHandoffUpdateTime = time
