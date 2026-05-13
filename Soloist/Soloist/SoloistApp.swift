@@ -95,9 +95,7 @@ struct SoloistApp: App {
         } else {
             // 注意：这里故意不传 playlist 参数，阻止其内部触发 reshuffle
             playerService.play(song: targetSong)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                playerService.seek(to: targetTime)
-            }
+            playerService.seek(to: targetTime)
         }
     }
 }

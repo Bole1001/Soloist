@@ -38,6 +38,7 @@ class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {
     
     // 用于桥接 Combine 事件
     private var cancellables = Set<AnyCancellable>()
+    private var shouldLoadLyricsWhenDurationReady = false
     
     // MARK: - Published States (UI Data Source)
     
@@ -123,7 +124,14 @@ class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {
         }
         
         engine.onDurationUpdate = { [weak self] dur in
-            DispatchQueue.main.async { self?.duration = dur }
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.duration = dur
+                if self.shouldLoadLyricsWhenDurationReady {
+                    self.shouldLoadLyricsWhenDurationReady = false
+                    self.loadLyricsForCurrentSong()
+                }
+            }
         }
     }
     
@@ -151,12 +159,10 @@ class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {
         }
         
         self.currentSong = song
+        self.shouldLoadLyricsWhenDurationReady = true
         engine.play(url: song.url)
         isPlaying = true
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            self.loadLyricsForCurrentSong()
-        }
         updateSystemInfo()
         
         self.updateHandoffState()
