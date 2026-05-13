@@ -111,12 +111,12 @@ class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {
         
         engine.onPlaybackFinished = { [weak self] in
             DispatchQueue.main.async {
-                if self?.isLoopMode == true {
-                    self?.seek(to: 0)
-                    self?.play(song: self!.currentSong!, playlist: self!.queueManager.originalPlaylist)
-                } else {
+                guard let self = self, self.isLoopMode, let song = self.currentSong else {
                     self?.next()
+                    return
                 }
+                self.seek(to: 0)
+                self.play(song: song, playlist: self.queueManager.originalPlaylist)
             }
         }
         
