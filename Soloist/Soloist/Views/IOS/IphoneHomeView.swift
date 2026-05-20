@@ -46,6 +46,9 @@ struct IphoneHomeView: View {
     // Tab 选中状态
     @State private var selection: String = "library"
     
+    // 仅允许首次进入时做一次启动扫描，避免每次回到主页都全量刷新
+    @State private var didAttemptInitialLibraryLoad = false
+    
     var body: some View {
         TabView(selection: $selection) {
             
@@ -127,7 +130,13 @@ struct IphoneHomeView: View {
             )
         }
         // 生命周期
-        .onAppear { libraryService.loadLocalDocuments() }
+        .onAppear {
+            guard !didAttemptInitialLibraryLoad else { return }
+            didAttemptInitialLibraryLoad = true
+            if libraryService.songs.isEmpty {
+                libraryService.loadLocalDocuments()
+            }
+        }
         .task(id: playerService.currentSong?.id) {
             if let song = playerService.currentSong {
                 currentArtworkData = await ArtworkLoader.loadArtwork(for: song)

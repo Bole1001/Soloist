@@ -36,9 +36,14 @@ struct SoloistApp: App {
         }
         // 生命周期管理：后台停止服务器并刷新歌曲列表
         .onChange(of: scenePhase) { oldPhase, newPhase in
-            if newPhase == .background {
+            switch newPhase {
+            case .background:
                 webDAVService.stopServer()
                 localLibrary.refreshLibrary()
+            case .active:
+                webDAVService.startServer()
+            default:
+                break
             }
         }
     }

@@ -19,6 +19,7 @@ struct SettingsPage: View {
     
     // 本地状态控制导入弹窗
     @State private var showFileImporter = false
+    @State private var showFolderImporter = false
     
     var body: some View {
         ZStack {
@@ -56,6 +57,11 @@ struct SettingsPage: View {
                     
                     // MARK: - 原有媒体库管理
                     Section(header: Text("媒体库管理")) {
+                        Button(action: { showFolderImporter = true }) {
+                            Label("重新授权音乐文件夹", systemImage: "folder.badge.gearshape")
+                                .foregroundStyle(.primary)
+                        }
+
                         // 1. 导入按钮 (重命名以区分来源)
                         Button(action: { showFileImporter = true }) {
                             Label("从手机文件 App 导入", systemImage: "folder")
@@ -83,6 +89,15 @@ struct SettingsPage: View {
                 .scrollContentBackground(.hidden)
                 .navigationTitle("设置")
                 // 文件导入器逻辑
+                .fileImporter(
+                    isPresented: $showFolderImporter,
+                    allowedContentTypes: [.folder],
+                    allowsMultipleSelection: false
+                ) { result in
+                    if case .success(let urls) = result, let folderURL = urls.first {
+                        libraryService.scanAndSavePermission(at: folderURL)
+                    }
+                }
                 .fileImporter(
                     isPresented: $showFileImporter,
                     allowedContentTypes: [.audio, UTType(filenameExtension: "lrc") ?? .plainText],

@@ -108,14 +108,10 @@ class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 if self.isLoopMode {
-                    // 循环模式：从队列第一首重新开始播放
-                    let queue = self.isShuffleMode ? self.queueManager.shuffledPlaylist : self.queueManager.originalPlaylist
-                    if let firstSong = queue.first {
-                        self.seek(to: 0)
-                        self.play(song: firstSong, playlist: self.queueManager.originalPlaylist)
-                    }
+                    self.stop()  // 重置状态
+                    self.next()  // 从队列第一首开始
                 } else {
-                    self.next()
+                    self.next()  // 非循环模式，正常切歌
                 }
             }
         }
