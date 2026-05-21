@@ -40,8 +40,6 @@ struct SoloistApp: App {
             case .background:
                 webDAVService.stopServer()
                 localLibrary.refreshLibrary()
-            case .active:
-                webDAVService.startServer()
             default:
                 break
             }

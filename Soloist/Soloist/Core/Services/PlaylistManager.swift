@@ -40,9 +40,9 @@ class PlaylistManager: ObservableObject {
     
     /// 循环模式开关
     ///
-    /// - `true`: 单曲循环。
-    /// - `false`: 列表循环。
-    @Published var isLoopMode: Bool = false
+    /// - `true`: 列表循环。
+    /// - `false`: 顺序播放到末尾后停止。
+    @Published var isLoopMode: Bool = true
     
     // MARK: - Playlist Management
     

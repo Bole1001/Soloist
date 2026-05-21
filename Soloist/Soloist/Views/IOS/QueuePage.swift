@@ -28,8 +28,8 @@ struct QueuePage: View {
                             #endif
                             queueManager.isLoopMode.toggle()
                         } label: {
-                            Label(queueManager.isLoopMode ? "单曲循环" : "列表循环",
-                                  systemImage: queueManager.isLoopMode ? "repeat.1" : "repeat")
+                            Label(queueManager.isLoopMode ? "列表循环" : "顺序播放",
+                                  systemImage: queueManager.isLoopMode ? "repeat" : "play")
                                 .font(.subheadline.bold())
                                 .foregroundStyle(queueManager.isLoopMode ? .blue : .primary)
                                 .contentTransition(.symbolEffect(.replace)) // 丝滑切换动画

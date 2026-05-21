@@ -107,12 +107,7 @@ class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {
         engine.onPlaybackFinished = { [weak self] in
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                if self.isLoopMode {
-                    self.stop()  // 重置状态
-                    self.next()  // 从队列第一首开始
-                } else {
-                    self.next()  // 非循环模式，正常切歌
-                }
+                self.next()
             }
         }
         
@@ -154,6 +149,7 @@ class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {
         self.currentSong = song
         self.shouldLoadLyricsWhenDurationReady = true
         engine.play(url: song.url)
+        loadLyricsForCurrentSong()
         isPlaying = true
         
         updateSystemInfo()
@@ -293,6 +289,9 @@ class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {
 
     private func loadLyricsForCurrentSong() {
         guard let song = currentSong else { return }
+        if duration <= 0, song.lrcURL == nil, (song.embeddedLyrics?.isEmpty ?? true) {
+            return
+        }
         self.lyrics = []
         self.currentLyric = song.title
         
