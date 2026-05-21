@@ -13,7 +13,7 @@ struct LRCLibSong: Codable {
     let trackName: String
     let artistName: String
     let albumName: String
-    
+
     /// 歌曲时长 (秒)
     let duration: Double
     
@@ -22,6 +22,33 @@ struct LRCLibSong: Codable {
     
     /// 纯文本歌词
     let plainLyrics: String?
+}
+
+/// 歌词拉取失败原因
+enum LyricsFetchError: LocalizedError {
+    case invalidSearchURL
+    case requestFailed(Error)
+    case invalidResponse
+    case decodingFailed(Error)
+    case emptyResult
+    case noLyricsFound
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidSearchURL:
+            return "歌词搜索地址无效"
+        case .requestFailed(let error):
+            return "歌词请求失败: \(error.localizedDescription)"
+        case .invalidResponse:
+            return "歌词服务返回了无效响应"
+        case .decodingFailed(let error):
+            return "歌词数据解析失败: \(error.localizedDescription)"
+        case .emptyResult:
+            return "歌词服务没有返回任何结果"
+        case .noLyricsFound:
+            return "未找到可用歌词"
+        }
+    }
 }
 
 /// 负责从网络获取歌词的工具类
@@ -34,8 +61,8 @@ class LyricsFetcher {
     ///   - artist: 歌手名称
     ///   - album: 专辑名称
     ///   - duration: 歌曲时长（秒），用于辅助筛选最佳匹配结果
-    ///   - completion: 搜索结果回调。成功返回歌词内容字符串，失败返回 nil
-    static func search(title: String, artist: String, album: String, duration: TimeInterval, completion: @escaping (String?) -> Void) {
+    ///   - completion: 搜索结果回调。成功返回歌词内容字符串，失败返回具体错误
+    static func search(title: String, artist: String, album: String, duration: TimeInterval, completion: @escaping (Result<String, LyricsFetchError>) -> Void) {
         
         // 构建 API 请求 URL
         var components = URLComponents(string: "https://lrclib.net/api/search")!
@@ -48,7 +75,7 @@ class LyricsFetcher {
         
         guard let url = components.url else {
             print("[LyricsFetcher] URL 构建失败")
-            completion(nil)
+            completion(.failure(.invalidSearchURL))
             return
         }
         
@@ -62,7 +89,13 @@ class LyricsFetcher {
         let task = URLSession.shared.dataTask(with: request) { data, response, error in
             guard let data = data, error == nil else {
                 print("[LyricsFetcher] 网络请求错误: \(error?.localizedDescription ?? "未知错误")")
-                completion(nil)
+                completion(.failure(.requestFailed(error ?? URLError(.unknown))))
+                return
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+                print("[LyricsFetcher] 网络响应无效")
+                completion(.failure(.invalidResponse))
                 return
             }
             
@@ -71,7 +104,7 @@ class LyricsFetcher {
                 let results = try JSONDecoder().decode([LRCLibSong].self, from: data)
                 
                 if results.isEmpty {
-                    completion(nil)
+                    completion(.failure(.emptyResult))
                     return
                 }
                 
@@ -93,17 +126,17 @@ class LyricsFetcher {
                     
                     if let content = lyricsContent, !content.isEmpty {
                         print("[LyricsFetcher] 歌词下载成功: \(song.trackName)")
-                        completion(content)
+                        completion(.success(content))
                     } else {
-                        completion(nil)
+                        completion(.failure(.noLyricsFound))
                     }
                 } else {
-                    completion(nil)
+                    completion(.failure(.noLyricsFound))
                 }
                 
             } catch {
                 print("[LyricsFetcher] 数据解析失败: \(error)")
-                completion(nil)
+                completion(.failure(.decodingFailed(error)))
             }
         }
         

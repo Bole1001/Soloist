@@ -14,9 +14,41 @@ import SwiftUI
 /// **职责**: 负责管理用户硬盘上的音乐文件夹，包括权限获取、并发扫描、LRC 歌词匹配。
 /// **层级**: Core Layer (Service)。
 class LocalLibraryService: ObservableObject {
-    
+
+    enum LocalLibraryError: LocalizedError {
+        case missingBookmark
+        case invalidBookmarkData
+        case staleBookmarkData
+        case securityScopedAccessDenied
+        case persistenceFailed(LibraryPersistenceService.PersistenceError)
+        case deleteFailed(URL, Error)
+        case copyFailed(URL, Error)
+        case emptySelection
+
+        var errorDescription: String? {
+            switch self {
+            case .missingBookmark:
+                return "未找到已保存的文件夹权限"
+            case .invalidBookmarkData:
+                return "文件夹权限数据无效"
+            case .staleBookmarkData:
+                return "文件夹权限已失效"
+            case .securityScopedAccessDenied:
+                return "无法获取文件夹访问权限"
+            case .persistenceFailed(let error):
+                return error.localizedDescription
+            case .deleteFailed(let url, let error):
+                return "删除失败 \(url.lastPathComponent): \(error.localizedDescription)"
+            case .copyFailed(let url, let error):
+                return "导入失败 \(url.lastPathComponent): \(error.localizedDescription)"
+            case .emptySelection:
+                return "未选择任何文件"
+            }
+        }
+    }
+
     // MARK: - Published Properties
-    
+
     /// 当前加载的所有歌曲列表
     @Published var songs: [Song] = []
     
@@ -28,24 +60,18 @@ class LocalLibraryService: ObservableObject {
     /// 记录当前正在访问的文件夹 URL，用于后续释放权限
     @Published var accessingURL: URL?
     
+    /// 最近一次可见错误，供 UI 或调试层读取
+    @Published var lastError: LocalLibraryError?
+
     /// 支持扫描的音频格式
     private let supportedExtensions = Set(["mp3", "flac", "m4a", "wav", "aiff", "ogg"])
     
     // MARK: - Lifecycle
     
     init() {
-        let cachedSongs = LibraryPersistenceService.loadLibrary()
-        if !cachedSongs.isEmpty {
-            self.songs = cachedSongs
-        }
-        
-        self.songDictionary = Dictionary(
-            cachedSongs.map { ($0.id, $0) },
-            uniquingKeysWith: { (oldValue, newValue) in
-                // 遇到重复 ID 时，直接保留新值，丢弃旧值，绝对不崩溃
-                return newValue
-            }
-        )
+        let cachedSongs = loadCachedSongs()
+        self.songs = cachedSongs
+        self.songDictionary = makeSongDictionary(from: cachedSongs)
 
         // 启动时优先恢复已保存的文件夹权限，保证上次授权的音乐库能自动回到可用状态。
         restorePermission()
@@ -63,54 +89,61 @@ class LocalLibraryService: ObservableObject {
         accessingURL = nil
     }
     
-    func scanAndSavePermission(at url: URL) {
-        do {
-            let options: URL.BookmarkCreationOptions = []
-            
-            let bookmarkData = try url.bookmarkData(options: options, includingResourceValuesForKeys: nil, relativeTo: nil)
-            UserDefaults.standard.set(bookmarkData, forKey: "UserMusicFolderBookmark")
-        } catch {
-            print("❌ [LocalLibrary] 保存权限失败: \(error)")
+    @discardableResult
+    func restorePermission() -> Result<Void, LocalLibraryError> {
+        guard let bookmarkData = UserDefaults.standard.data(forKey: "UserMusicFolderBookmark") else {
+            // 新安装或用户尚未选择文件夹时，不把“没有保存过权限”当成错误。
+            return .success(())
         }
-        startAccessing(url: url, forceScan: true)
-    }
-    
-    func restorePermission() {
-        guard let bookmarkData = UserDefaults.standard.data(forKey: "UserMusicFolderBookmark") else { return }
         var isStale = false
-        
+
         let options: URL.BookmarkResolutionOptions = []
-        
-        if let url = try? URL(resolvingBookmarkData: bookmarkData, options: options, relativeTo: nil, bookmarkDataIsStale: &isStale), !isStale {
-            startAccessing(url: url, forceScan: false)
-        }
-    }
-    
-    private func startAccessing(url: URL, forceScan: Bool) {
-        stopAccessing() // 先释放旧的
-        
-        if url.startAccessingSecurityScopedResource() {
-            self.accessingURL = url
-            
-            // 策略A：读缓存
-            if !forceScan {
-                let cached = LibraryPersistenceService.loadLibrary()
-                if !cached.isEmpty {
-                    self.songs = cached
-                    print("⚡️ [LocalLibrary] 命中缓存，跳过扫描")
-                    return
-                }
+
+        do {
+            let url = try URL(
+                resolvingBookmarkData: bookmarkData,
+                options: options,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+            guard !isStale else {
+                return reportError(.staleBookmarkData)
             }
-            // 策略B：全盘扫描
-            scanDirectory(at: url)
+            return startAccessing(url: url, forceScan: false)
+        } catch {
+            return reportError(.invalidBookmarkData)
         }
     }
     
+    @discardableResult
+    private func startAccessing(url: URL, forceScan: Bool) -> Result<Void, LocalLibraryError> {
+        stopAccessing() // 先释放旧的
+
+        guard url.startAccessingSecurityScopedResource() else {
+            return reportError(.securityScopedAccessDenied)
+        }
+
+        self.accessingURL = url
+
+        // 策略A：读缓存
+        if !forceScan {
+            let cached = loadCachedSongs()
+            if !cached.isEmpty {
+                self.songs = cached
+                print("⚡️ [LocalLibrary] 命中缓存，跳过扫描")
+                return .success(())
+            }
+        }
+        // 策略B：全盘扫描
+        scanDirectory(at: url)
+        return .success(())
+    }
+
     // MARK: - Concurrent Scanning Logic
-    
+
     func scanDirectory(at rootURL: URL) {
         print("🐢 [LocalLibrary] 开始并发扫描: \(rootURL.path)")
-        
+
         let fileManager = FileManager.default
         let enumerator = fileManager.enumerator(
             at: rootURL,
@@ -162,7 +195,7 @@ class LocalLibraryService: ObservableObject {
             }
             
             // 3. 持久化缓存 (此时传进去的 parsedSongs 已经是绝对去重的了)
-            LibraryPersistenceService.saveLibrary(songs: parsedSongs)
+            _ = persistSongs(parsedSongs)
             
             // 4. 广播垃圾回收信号
             let validIDs = Set(parsedSongs.map { $0.id })
@@ -182,7 +215,7 @@ class LocalLibraryService: ObservableObject {
             }
         }
     }
-    
+
     /// 私有辅助方法：解析单首歌曲（将之前的嵌套逻辑抽离，保持代码清晰）
     private func parseSingleFile(_ fileURL: URL) async -> Song? {
         let baseSong = await MetadataService.parse(url: fileURL)
@@ -206,12 +239,14 @@ class LocalLibraryService: ObservableObject {
             embeddedLyrics: baseSong.embeddedLyrics
         )
     }
-    
+
     // MARK: - Deletion Logic
         
     /// 删除指定歌曲 (同时删除关联的 LRC 文件)
-    func deleteSongs(at offsets: IndexSet) {
+    @discardableResult
+    func deleteSongs(at offsets: IndexSet) -> Result<Void, LocalLibraryError> {
         let fileManager = FileManager.default
+        var firstError: LocalLibraryError?
         
         offsets.forEach { index in
             let song = songs[index]
@@ -227,7 +262,9 @@ class LocalLibraryService: ObservableObject {
                     print("🗑️ 已删除关联歌词")
                 }
             } catch {
-                print("❌ 删除失败: \(error.localizedDescription)")
+                let localError = LocalLibraryError.deleteFailed(song.url, error)
+                firstError = firstError ?? localError
+                print("❌ 删除失败: \(localError.localizedDescription)")
             }
         }
         
@@ -241,31 +278,39 @@ class LocalLibraryService: ObservableObject {
         }
         
         // 4. 更新持久化缓存
-        LibraryPersistenceService.saveLibrary(songs: songs)
+        let saveResult = persistSongs(songs)
+        return combine(firstError.map { .failure($0) } ?? .success(()), saveResult)
     }
-    
+
     // MARK: - Public Actions
         
     /// 手动刷新当前库 (用于检测新歌)
-    func refreshLibrary() {
+    @discardableResult
+    func refreshLibrary() -> Result<Void, LocalLibraryError> {
         guard let url = accessingURL else {
-            print("⚠️ [LocalLibrary] 无法刷新：当前没有挂载的文件夹")
-            return
+            return reportError(.missingBookmark)
         }
         
         print("🔄 [LocalLibrary] 触发手动刷新...")
         scanDirectory(at: url)
+        return .success(())
     }
-    
+
     // MARK: - App Sandbox Logic (App 本地存储)
         
     var documentsDirectory: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
-    
-    func importSongs(from sourceURLs: [URL]) {
+
+    @discardableResult
+    func importSongs(from sourceURLs: [URL]) -> Result<Void, LocalLibraryError> {
         let fileManager = FileManager.default
         let destFolder = documentsDirectory
+        var firstError: LocalLibraryError?
+
+        guard !sourceURLs.isEmpty else {
+            return reportError(.emptySelection)
+        }
         
         for srcURL in sourceURLs {
             let accessing = srcURL.startAccessingSecurityScopedResource()
@@ -285,15 +330,76 @@ class LocalLibraryService: ObservableObject {
                 print("✅ [Import] 成功导入: \(srcURL.lastPathComponent)")
                 
             } catch {
-                print("❌ [Import] 导入失败: \(error.localizedDescription)")
+                let localError = LocalLibraryError.copyFailed(srcURL, error)
+                firstError = firstError ?? localError
+                print("❌ [Import] 导入失败: \(localError.localizedDescription)")
             }
         }
         
         scanDirectory(at: documentsDirectory)
+        return firstError.map { .failure($0) } ?? .success(())
     }
-    
-    func loadLocalDocuments() {
+
+    @discardableResult
+    func loadLocalDocuments() -> Result<Void, LocalLibraryError> {
         scanDirectory(at: documentsDirectory)
+        return .success(())
+    }
+
+    // MARK: - Persistence Helpers
+
+    private func loadCachedSongs() -> [Song] {
+        switch LibraryPersistenceService.loadLibrary() {
+        case .success(let songs):
+            print("📂 [Persistence] 成功从本地数据库加载 \(songs.count) 首歌")
+            return songs
+        case .failure(let error):
+            if case .fileMissing = error {
+                print("⚠️ [Persistence] 本地数据库不存在，准备初始化为空库...")
+            } else {
+                _ = reportError(.persistenceFailed(error))
+            }
+            return []
+        }
+    }
+
+    @discardableResult
+    private func persistSongs(_ songs: [Song]) -> Result<Void, LocalLibraryError> {
+        switch LibraryPersistenceService.saveLibrary(songs: songs) {
+        case .success:
+            print("💾 [Persistence] 成功保存 \(songs.count) 首歌到本地数据库")
+            return .success(())
+        case .failure(let error):
+            let localError = LocalLibraryError.persistenceFailed(error)
+            return reportError(localError)
+        }
+    }
+
+    private func makeSongDictionary(from songs: [Song]) -> [String: Song] {
+        Dictionary(
+            songs.map { ($0.id, $0) },
+            uniquingKeysWith: { _, newValue in
+                newValue
+            }
+        )
+    }
+
+    @discardableResult
+    private func reportError(_ error: LocalLibraryError) -> Result<Void, LocalLibraryError> {
+        lastError = error
+        print("❌ [LocalLibrary] \(error.localizedDescription)")
+        return .failure(error)
+    }
+
+    private func combine(_ lhs: Result<Void, LocalLibraryError>, _ rhs: Result<Void, LocalLibraryError>) -> Result<Void, LocalLibraryError> {
+        switch (lhs, rhs) {
+        case (.success, .success):
+            return .success(())
+        case (.failure(let error), _):
+            return .failure(error)
+        case (_, .failure(let error)):
+            return .failure(error)
+        }
     }
 }
 

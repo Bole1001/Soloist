@@ -89,8 +89,17 @@ class PhantomGuard {
                     
                     let displayName = self.resolveDisplayName(from: event, location: location)
                     self.menuBarManager.updateMenuInfo(text: displayName)
-                    self.currentLyrics = LyricEngine.loadLyrics(for: location)
-                    self.currentLineIndex = nil
+                    switch LyricEngine.loadLyrics(for: location) {
+                    case .success(let lyrics):
+                        self.currentLyrics = lyrics
+                        self.currentLineIndex = nil
+                        self.menuBarManager.updateLyricsTitle(text: nil)
+                    case .failure(let error):
+                        print("⚠️ [PhantomGuard] 歌词加载失败: \(error.localizedDescription)")
+                        self.currentLyrics = []
+                        self.currentLineIndex = nil
+                        self.menuBarManager.updateLyricsTitle(text: nil)
+                    }
                 }
                 
                 self.startTimeGear()

@@ -12,14 +12,44 @@ import UIKit
 
 #if os(iOS)
 class WebDAVService: ObservableObject {
+    enum WebDAVServiceError: LocalizedError {
+        case missingDocumentsDirectory
+        case startFailed(Error)
+        case invalidUploadRequest
+        case unableToCreateLyricsDirectory(Error)
+        case failedToMoveFile(String, Error)
+        case failedToRemoveTemporaryFile(String, Error)
+
+        var errorDescription: String? {
+            switch self {
+            case .missingDocumentsDirectory:
+                return "无法找到文档目录"
+            case .startFailed(let error):
+                return "无线传输启动失败: \(error.localizedDescription)"
+            case .invalidUploadRequest:
+                return "上传请求无效"
+            case .unableToCreateLyricsDirectory(let error):
+                return "无法创建歌词目录: \(error.localizedDescription)"
+            case .failedToMoveFile(let fileName, let error):
+                return "文件移动失败 \(fileName): \(error.localizedDescription)"
+            case .failedToRemoveTemporaryFile(let fileName, let error):
+                return "临时文件清理失败 \(fileName): \(error.localizedDescription)"
+            }
+        }
+    }
+
     private var webServer: GCDWebServer?
-    
+
     @Published var serverURL: String = ""
     @Published var isRunning: Bool = false
+    @Published var lastError: WebDAVServiceError?
     
-    func startServer() {
-        guard !isRunning else { return }
-        guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path else { return }
+    @discardableResult
+    func startServer() -> Result<Void, WebDAVServiceError> {
+        guard !isRunning else { return .success(()) }
+        guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path else {
+            return reportError(.missingDocumentsDirectory)
+        }
         
         webServer = GCDWebServer()
         
@@ -68,12 +98,16 @@ class WebDAVService: ObservableObject {
                 DispatchQueue.main.async {
                     self.serverURL = url.absoluteString
                     self.isRunning = true
+                    self.lastError = nil
                     // 开启服务时，禁止屏幕自动休眠
                     UIApplication.shared.isIdleTimerDisabled = true
                 }
             }
+            return .success(())
         } catch {
             print("HTTP 启动失败: \(error.localizedDescription)")
+            webServer = nil
+            return reportError(.startFailed(error))
         }
     }
     
@@ -84,6 +118,7 @@ class WebDAVService: ObservableObject {
         DispatchQueue.main.async {
             self.serverURL = ""
             self.isRunning = false
+            self.lastError = nil
             // 关闭服务后，恢复屏幕自动休眠
             UIApplication.shared.isIdleTimerDisabled = false
         }
@@ -92,6 +127,7 @@ class WebDAVService: ObservableObject {
     // MARK: - 核心业务抽离：IO 处理与路由
     private func handleUpload(request: GCDWebServerRequest, documentsPath: String) -> GCDWebServerResponse? {
         guard let multipartRequest = request as? GCDWebServerMultiPartFormRequest else {
+            _ = reportError(.invalidUploadRequest)
             return GCDWebServerDataResponse(html: "<h3>上传失败：无效的请求</h3>")!
         }
         
@@ -120,36 +156,58 @@ class WebDAVService: ObservableObject {
             if fileExtension == "lrc" || fileExtension == "txt" {
                 let lyricsDirPath = (documentsPath as NSString).appendingPathComponent("Lyrics")
                 if !FileManager.default.fileExists(atPath: lyricsDirPath) {
-                    try? FileManager.default.createDirectory(atPath: lyricsDirPath, withIntermediateDirectories: true, attributes: nil)
+                    do {
+                        try FileManager.default.createDirectory(atPath: lyricsDirPath, withIntermediateDirectories: true, attributes: nil)
+                    } catch {
+                        _ = reportError(.unableToCreateLyricsDirectory(error))
+                        continue
+                    }
                 }
                 targetPath = (lyricsDirPath as NSString).appendingPathComponent(fileName)
             }
             
             // IO 逻辑（此处的 skipCount 为双重兜底，主要依赖前端过滤）
-            do {
-                if FileManager.default.fileExists(atPath: targetPath) {
-                    if shouldOverwrite {
+            if FileManager.default.fileExists(atPath: targetPath) {
+                if shouldOverwrite {
+                    do {
                         try FileManager.default.removeItem(atPath: targetPath)
                         try FileManager.default.moveItem(atPath: tempPath, toPath: targetPath)
                         successCount += 1
-                    } else {
+                    } catch {
+                        _ = reportError(.failedToMoveFile(fileName, error))
+                    }
+                } else {
+                    do {
                         try FileManager.default.removeItem(atPath: tempPath)
                         skipCount += 1
                         continue
+                    } catch {
+                        _ = reportError(.failedToRemoveTemporaryFile(fileName, error))
                     }
-                } else {
+                }
+            } else {
+                do {
                     try FileManager.default.moveItem(atPath: tempPath, toPath: targetPath)
                     successCount += 1
+                } catch {
+                    _ = reportError(.failedToMoveFile(fileName, error))
                 }
-            } catch {
-                print("处理异常 \(fileName): \(error)")
             }
         }
         
         // 核心业务抽离：调用 UI 工厂方法获取动态 HTML
         let resultHtml = WebServerUI.resultHTML(success: successCount, skip: skipCount)
-        
+
         return GCDWebServerDataResponse(html: resultHtml)!
+    }
+
+    @discardableResult
+    private func reportError(_ error: WebDAVServiceError) -> Result<Void, WebDAVServiceError> {
+        DispatchQueue.main.async {
+            self.lastError = error
+        }
+        print("❌ [WebDAV] \(error.localizedDescription)")
+        return .failure(error)
     }
 }
 #endif

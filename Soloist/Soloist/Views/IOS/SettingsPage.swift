@@ -19,7 +19,6 @@ struct SettingsPage: View {
     
     // 本地状态控制导入弹窗
     @State private var showFileImporter = false
-    @State private var showFolderImporter = false
     
     var body: some View {
         ZStack {
@@ -29,6 +28,12 @@ struct SettingsPage: View {
                 Form {
                     // MARK: - ✨ 新增：局域网传输模块
                     Section(header: Text("局域网无线传输")) {
+                        if let error = webDAVService.lastError {
+                            Text(error.localizedDescription)
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                        }
+
                         if webDAVService.isRunning {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("服务已启动，请在电脑浏览器访问：")
@@ -42,14 +47,15 @@ struct SettingsPage: View {
                                     .textSelection(.enabled)
                             }
                             .padding(.vertical, 4)
-                            
-                            Button(role: .destructive, action: { webDAVService.stopServer() }) {
-                                Label("停止传输服务", systemImage: "stop.circle")
-                            }
                         } else {
-                            Button(action: { webDAVService.startServer() }) {
+                            Button(action: { _ = webDAVService.startServer() }) {
                                 Label("开启电脑网页导歌", systemImage: "network")
                                     .foregroundStyle(.primary)
+                            }
+                        }
+                        if webDAVService.isRunning {
+                            Button(role: .destructive, action: { webDAVService.stopServer() }) {
+                                Label("停止传输服务", systemImage: "stop.circle")
                             }
                         }
                     }
@@ -57,11 +63,6 @@ struct SettingsPage: View {
                     
                     // MARK: - 原有媒体库管理
                     Section(header: Text("媒体库管理")) {
-                        Button(action: { showFolderImporter = true }) {
-                            Label("重新授权音乐文件夹", systemImage: "folder.badge.gearshape")
-                                .foregroundStyle(.primary)
-                        }
-
                         // 1. 导入按钮 (重命名以区分来源)
                         Button(action: { showFileImporter = true }) {
                             Label("从手机文件 App 导入", systemImage: "folder")
@@ -88,16 +89,6 @@ struct SettingsPage: View {
                 }
                 .scrollContentBackground(.hidden)
                 .navigationTitle("设置")
-                // 文件导入器逻辑
-                .fileImporter(
-                    isPresented: $showFolderImporter,
-                    allowedContentTypes: [.folder],
-                    allowsMultipleSelection: false
-                ) { result in
-                    if case .success(let urls) = result, let folderURL = urls.first {
-                        libraryService.scanAndSavePermission(at: folderURL)
-                    }
-                }
                 .fileImporter(
                     isPresented: $showFileImporter,
                     allowedContentTypes: [.audio, UTType(filenameExtension: "lrc") ?? .plainText],

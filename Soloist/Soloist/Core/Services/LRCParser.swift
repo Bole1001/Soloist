@@ -15,7 +15,24 @@ import Foundation
 /// 支持标准的 `[mm:ss.xx]` 时间戳格式。
 /// 解析结果会自动按时间升序排列，确保播放器能按顺序读取。
 struct LRCParser {
-    
+
+    enum LRCParserError: LocalizedError {
+        case fileReadFailed(String)
+        case regexUnavailable
+        case noLyricsFound
+
+        var errorDescription: String? {
+            switch self {
+            case .fileReadFailed(let fileName):
+                return "无法读取歌词文件: \(fileName)"
+            case .regexUnavailable:
+                return "歌词解析器不可用"
+            case .noLyricsFound:
+                return "未解析到可用歌词"
+            }
+        }
+    }
+
     // 预编译时间标签正则，避免每次解析重复构造；构造失败时直接走空结果降级。
     private static let timeTagRegex: NSRegularExpression? = {
         try? NSRegularExpression(pattern: "\\[(\\d+):(\\d+\\.?\\d*)\\]")
@@ -28,8 +45,8 @@ struct LRCParser {
     /// 适用于读取本地 .lrc 文件。
     ///
     /// - Parameter url: 本地文件路径
-    /// - Returns: 解析后的歌词数组。如果读取失败（如文件不存在或编码错误），返回空数组。
-    static func parse(url: URL) -> [LyricLine] {
+    /// - Returns: 解析后的歌词数组。如果读取失败或内容无效，返回错误。
+    static func parse(url: URL) -> Result<[LyricLine], LRCParserError> {
         if let content = try? String(contentsOf: url, encoding: .utf8) {
             return parse(content: content)
         }
@@ -40,7 +57,7 @@ struct LRCParser {
         }
         
         print("⚠️ [LRCParser] 读取文件失败或编码无法识别: \(url.lastPathComponent)")
-        return []
+        return .failure(.fileReadFailed(url.lastPathComponent))
     }
     
     /// 从原始字符串解析歌词 (核心逻辑)
@@ -48,15 +65,15 @@ struct LRCParser {
     /// 适用于解析 MP3 内嵌歌词 (ID3 USLT/SYLT) 或网络下载的字符串。
     ///
     /// - Parameter content: LRC 格式的全文内容
-    /// - Returns: 按时间排序的歌词数组
-    static func parse(content: String) -> [LyricLine] {
+    /// - Returns: 按时间排序的歌词数组。如果没有解析到可用歌词，返回错误。
+    static func parse(content: String) -> Result<[LyricLine], LRCParserError> {
         var lyrics: [LyricLine] = []
         
         // 1. 按行切割，处理不同系统的换行符 (\n, \r\n)
         let lines = content.components(separatedBy: .newlines)
 
         guard let regex = timeTagRegex else {
-            return []
+            return .failure(.regexUnavailable)
         }
         
         for line in lines {
@@ -82,6 +99,7 @@ struct LRCParser {
         }
         
         // 5. 排序返回
-        return lyrics.sorted { $0.startTime < $1.startTime }
+        let sorted = lyrics.sorted { $0.startTime < $1.startTime }
+        return sorted.isEmpty ? .failure(.noLyricsFound) : .success(sorted)
     }
 }

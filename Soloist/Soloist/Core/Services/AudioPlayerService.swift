@@ -295,7 +295,7 @@ class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {
         self.lyrics = []
         self.currentLyric = song.title
         
-        lyricsManager.fetchLyrics(for: song, duration: duration) { [weak self] parsed, updatedSong in
+        lyricsManager.fetchLyrics(for: song, duration: duration) { [weak self] parsed, updatedSong, _ in
             DispatchQueue.main.async {
                 guard let self = self, self.currentSong?.id == song.id else { return }
                 self.lyrics = parsed

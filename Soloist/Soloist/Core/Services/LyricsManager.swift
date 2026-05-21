@@ -44,31 +44,48 @@ class LyricsManager {
     ///   - completion: 回调闭包。
     ///     - lyrics: 解析后的歌词行数组。
     ///     - updatedSong: 如果触发了网络下载并保存，会返回更新了 `lrcURL` 的新 Song 对象；否则返回 nil。
-    func fetchLyrics(for song: Song, duration: TimeInterval, completion: @escaping ([LyricLine], Song?) -> Void) {
+    func fetchLyrics(for song: Song, duration: TimeInterval, completion: @escaping ([LyricLine], Song?, String?) -> Void) {
         
         let requestToken = UUID()
         self.currentSearchToken = requestToken
+        var fallbackErrorMessage: String?
         
         // 策略 A: 检查本地关联的 LRC 文件 (基于 LocalLibrary 扫描时建立的索引)
         if let lrcURL = song.lrcURL {
-            let parsed = LRCParser.parse(url: lrcURL)
-            if !parsed.isEmpty {
-                completion(parsed, nil)
-                return
+            switch LRCParser.parse(url: lrcURL) {
+            case .success(let parsed):
+                if !parsed.isEmpty {
+                    completion(parsed, nil, nil)
+                    return
+                }
+            case .failure(let error):
+                if case .noLyricsFound = error {
+                    break
+                } else {
+                    fallbackErrorMessage = error.localizedDescription
+                }
             }
         }
         
         // 策略 B: 检查音频文件内嵌的歌词
         if let embedded = song.embeddedLyrics, !embedded.isEmpty {
-            let parsed = LRCParser.parse(content: embedded)
-            if !parsed.isEmpty {
-                completion(parsed, nil)
-                return
+            switch LRCParser.parse(content: embedded) {
+            case .success(let parsed):
+                if !parsed.isEmpty {
+                    completion(parsed, nil, nil)
+                    return
+                }
+            case .failure(let error):
+                if case .noLyricsFound = error {
+                    break
+                } else {
+                    fallbackErrorMessage = fallbackErrorMessage ?? error.localizedDescription
+                }
             }
         }
         
         // 策略 C: 执行网络搜索
-        LyricsFetcher.search(title: song.title, artist: song.artist, album: "", duration: duration) { [weak self] content in
+        LyricsFetcher.search(title: song.title, artist: song.artist, album: "", duration: duration) { [weak self] result in
             guard let self = self else { return }
             
             guard self.currentSearchToken == requestToken else {
@@ -76,20 +93,24 @@ class LyricsManager {
                 return
             }
             
-            guard let content = content else {
-                completion([], nil)
-                return
-            }
-            
-            let parsed = LRCParser.parse(content: content)
-            
-            if !parsed.isEmpty {
-                // 下载成功，执行双端统一的落盘逻辑
-                self.saveLrcFile(content: content, for: song) { updatedSong in
-                    completion(parsed, updatedSong)
+            switch result {
+            case .success(let content):
+                switch LRCParser.parse(content: content) {
+                case .success(let parsed):
+                    if !parsed.isEmpty {
+                        // 下载成功，执行双端统一的落盘逻辑
+                        self.saveLrcFile(content: content, for: song) { updatedSong in
+                            completion(parsed, updatedSong, nil)
+                        }
+                    } else {
+                        completion([], nil, fallbackErrorMessage ?? LyricsFetchError.noLyricsFound.localizedDescription)
+                    }
+                case .failure(let error):
+                    completion([], nil, fallbackErrorMessage ?? error.localizedDescription)
                 }
-            } else {
-                completion([], nil)
+            case .failure(let error):
+                print("⚠️ [LyricsManager] 在线歌词获取失败: \(error.localizedDescription)")
+                completion([], nil, fallbackErrorMessage ?? error.localizedDescription)
             }
         }
     }
