@@ -16,6 +16,11 @@ import Foundation
 /// 解析结果会自动按时间升序排列，确保播放器能按顺序读取。
 struct LRCParser {
     
+    // 预编译时间标签正则，避免每次解析重复构造；构造失败时直接走空结果降级。
+    private static let timeTagRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: "\\[(\\d+):(\\d+\\.?\\d*)\\]")
+    }()
+    
     // MARK: - Public API
     
     /// 从文件 URL 解析歌词
@@ -25,18 +30,17 @@ struct LRCParser {
     /// - Parameter url: 本地文件路径
     /// - Returns: 解析后的歌词数组。如果读取失败（如文件不存在或编码错误），返回空数组。
     static func parse(url: URL) -> [LyricLine] {
-        do {
-            // 尝试读取文件内容
-            // 注意：通常 LRC 文件使用 UTF-8 编码，但也可能是 GBK (需额外处理，这里默认 UTF-8)
-            let content = try String(contentsOf: url, encoding: .utf8)
-            
-            // 复用核心解析逻辑
+        if let content = try? String(contentsOf: url, encoding: .utf8) {
             return parse(content: content)
-        } catch {
-            print("⚠️ [LRCParser] 读取文件失败: \(url.lastPathComponent) - \(error)")
-            // 失败时返回空数组，避免 UI 崩溃，显示"无歌词"即可
-            return []
         }
+        
+        let gb18030Encoding = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)))
+        if let content = try? String(contentsOf: url, encoding: gb18030Encoding) {
+            return parse(content: content)
+        }
+        
+        print("⚠️ [LRCParser] 读取文件失败或编码无法识别: \(url.lastPathComponent)")
+        return []
     }
     
     /// 从原始字符串解析歌词 (核心逻辑)
@@ -50,47 +54,31 @@ struct LRCParser {
         
         // 1. 按行切割，处理不同系统的换行符 (\n, \r\n)
         let lines = content.components(separatedBy: .newlines)
+
+        guard let regex = timeTagRegex else {
+            return []
+        }
         
-        // 2. 准备正则: 匹配 [00:12.34] 格式
-        // \\[       -> 匹配左中括号 [
-        // (\\d+)    -> 第1组: 分钟 (数字)
-        // :         -> 冒号
-        // (\\d+\\.?\\d*) -> 第2组: 秒 (整数或小数)
-        // \\]       -> 匹配右中括号 ]
-        // (.*)      -> 第3组: 歌词文本
-        let pattern = "\\[(\\d+):(\\d+\\.?\\d*)\\](.*)"
-        
-        do {
-            let regex = try NSRegularExpression(pattern: pattern)
+        for line in lines {
+            if line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
             
-            for line in lines {
-                // 跳过纯空白行，优化性能
-                if line.trimmingCharacters(in: .whitespaces).isEmpty { continue }
+            let nsString = line as NSString
+            let matches = regex.matches(in: line, range: NSRange(location: 0, length: nsString.length))
+            guard !matches.isEmpty, let lastMatch = matches.last else { continue }
+            
+            // 文本内容位于最后一个时间戳之后，元数据行会因为没有歌词文本而自然降级为空串。
+            let textStartLocation = lastMatch.range.location + lastMatch.range.length
+            let text = nsString.substring(from: textStartLocation).trimmingCharacters(in: .whitespaces)
+            
+            for match in matches {
+                let minStr = nsString.substring(with: match.range(at: 1))
+                let secStr = nsString.substring(with: match.range(at: 2))
                 
-                let nsString = line as NSString
-                let results = regex.matches(in: line, range: NSRange(location: 0, length: nsString.length))
+                guard let min = Double(minStr), let sec = Double(secStr) else { continue }
+                let time = min * 60 + sec
                 
-                if let match = results.first {
-                    // 3. 提取正则捕获组
-                    // range(at: 1) -> 分钟
-                    // range(at: 2) -> 秒
-                    // range(at: 3) -> 歌词内容
-                    let minStr = nsString.substring(with: match.range(at: 1))
-                    let secStr = nsString.substring(with: match.range(at: 2))
-                    let text = nsString.substring(with: match.range(at: 3)).trimmingCharacters(in: .whitespaces)
-                    
-                    // 4. 计算时间戳 (转换为秒)
-                    if let min = Double(minStr), let sec = Double(secStr) {
-                        let time = min * 60 + sec
-                        
-                        // 创建模型
-                        // ID 自动生成，startTime 用于排序，text 用于显示
-                        lyrics.append(LyricLine(startTime: time, text: text))
-                    }
-                }
+                lyrics.append(LyricLine(startTime: time, text: text))
             }
-        } catch {
-            print("❌ [LRCParser] 正则表达式错误: \(error)")
         }
         
         // 5. 排序返回

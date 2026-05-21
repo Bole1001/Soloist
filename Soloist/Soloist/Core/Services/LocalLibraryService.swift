@@ -46,9 +46,9 @@ class LocalLibraryService: ObservableObject {
                 return newValue
             }
         )
-        
-        // iOS 启动时，直接扫描 Documents 目录 (加载 iTunes 共享或上次导入的文件)
-        //loadLocalDocuments()
+
+        // 启动时优先恢复已保存的文件夹权限，保证上次授权的音乐库能自动回到可用状态。
+        restorePermission()
     }
     
     /// 析构时自动释放权限，防止资源泄漏

@@ -23,10 +23,6 @@ class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {
     /// 全局单例
     static let shared = AudioPlayerService()
     
-    // MARK: - Handoff States
-    private var handoffActivity: NSUserActivity?
-    private var lastHandoffUpdateTime: TimeInterval = 0
-    
     // MARK: - Private Dependencies (Subsystems)
     
     /// 音频引擎：负责底层的 AVAudioPlayer 控制
@@ -38,6 +34,7 @@ class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {
     
     // 用于桥接 Combine 事件
     private var cancellables = Set<AnyCancellable>()
+    private var shouldLoadLyricsWhenDurationReady = false
     
     // MARK: - Published States (UI Data Source)
     
@@ -96,10 +93,8 @@ class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {
     private func setupEngineCallbacks() {
         engine.onTimeUpdate = { [weak self] time in
             guard let self = self else { return }
-            self.currentTime = time
-            if abs(time - self.lastHandoffUpdateTime) > 5.0 {
-                self.updateHandoffState()
-                self.lastHandoffUpdateTime = time
+            DispatchQueue.main.async {
+                self.currentTime = time
             }
             if let lineText = self.lyricsManager.findCurrentLine(in: self.lyrics, at: time),
                lineText != self.currentLyric {
@@ -111,17 +106,25 @@ class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {
         
         engine.onPlaybackFinished = { [weak self] in
             DispatchQueue.main.async {
-                if self?.isLoopMode == true {
-                    self?.seek(to: 0)
-                    self?.play(song: self!.currentSong!, playlist: self!.queueManager.originalPlaylist)
+                guard let self = self else { return }
+                if self.isLoopMode {
+                    self.stop()  // 重置状态
+                    self.next()  // 从队列第一首开始
                 } else {
-                    self?.next()
+                    self.next()  // 非循环模式，正常切歌
                 }
             }
         }
         
         engine.onDurationUpdate = { [weak self] dur in
-            DispatchQueue.main.async { self?.duration = dur }
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.duration = dur
+                if self.shouldLoadLyricsWhenDurationReady {
+                    self.shouldLoadLyricsWhenDurationReady = false
+                    self.loadLyricsForCurrentSong()
+                }
+            }
         }
     }
     
@@ -149,15 +152,11 @@ class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {
         }
         
         self.currentSong = song
+        self.shouldLoadLyricsWhenDurationReady = true
         engine.play(url: song.url)
         isPlaying = true
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            self.loadLyricsForCurrentSong()
-        }
         updateSystemInfo()
-        
-        self.updateHandoffState()
     }
     
     func pause() {
@@ -184,7 +183,6 @@ class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {
         currentTime = 0
         lyrics = []
         updateSystemInfo()
-        self.invalidateHandoff()
     }
     
     func seek(to time: TimeInterval) {
@@ -192,7 +190,6 @@ class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {
         currentTime = time
         updateLyrics()
         updateSystemInfo()
-        self.updateHandoffState()
     }
     
     func toggleShuffle() {
@@ -306,67 +303,6 @@ class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {
                 if let newSong = updatedSong {
                     self.currentSong = newSong
                 }
-            }
-        }
-    }
-    
-    // MARK: - Handoff Logic
-        
-    private func updateHandoffState() {
-        #if os(iOS)
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            guard let song = self.currentSong else {
-                self.handoffActivity?.invalidate()
-                self.handoffActivity = nil
-                return
-            }
-            
-            if self.handoffActivity == nil {
-                self.handoffActivity = NSUserActivity(activityType: "com.soloist.handoff.playback")
-                self.handoffActivity?.isEligibleForHandoff = true
-                self.handoffActivity?.title = "正在播放: \(song.title)"
-                self.handoffActivity?.delegate = self
-            }
-            
-            // 提取防插队滑动窗口 (包含当前歌 + 往后 10 首)
-            let windowIDs = self.queueManager.getSlidingWindowIDs(after: song, limit: 10)
-            
-            // 组装全量播放上下文
-            self.handoffActivity?.addUserInfoEntries(from: [
-                "songID": song.id,
-                "currentTime": self.currentTime,
-                "isShuffleMode": self.isShuffleMode,
-                "isLoopMode": self.isLoopMode,
-                "windowIDs": windowIDs
-            ])
-            
-            self.handoffActivity?.becomeCurrent()
-            print("📡 [Handoff 发射端] 已广播状态 | 模式: 随机(\(self.isShuffleMode)) 循环(\(self.isLoopMode)) | 窗口长度: \(windowIDs.count)")
-        }
-        #else
-        return
-        #endif
-    }
-
-    /// 彻底切断 Handoff 广播 (用于停止播放时)
-    private func invalidateHandoff() {
-        handoffActivity?.invalidate()
-        handoffActivity = nil
-    }
-
-    // MARK: - NSUserActivityDelegate
-        
-    /// 当 Handoff 载荷被另一台设备成功接管时，系统会回调此方法 (仅在发射端触发)
-    func userActivityWasContinued(_ userActivity: NSUserActivity) {
-        print("📱 [Handoff 发射端] 收到系统回执：Mac 已成功接管音频会话")
-        
-        // 强制切回主线程执行暂停操作，防止后台线程触发 UI 更新崩溃
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            if self.isPlaying {
-                print("📱 [Handoff 发射端] 正在自动暂停本机播放...")
-                self.pause()
             }
         }
     }

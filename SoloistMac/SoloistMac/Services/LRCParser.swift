@@ -16,9 +16,10 @@ import Foundation
 /// 解析结果会自动按时间升序排列，确保播放器能按顺序读取。
 struct LRCParser {
     
-    // 将正则表达式提取为静态变量，避免重复编译损耗性能
-    // 仅匹配时间戳部分，方便提取单行内的多个时间点
-    private static let timeTagRegex = try! NSRegularExpression(pattern: "\\[(\\d+):(\\d+\\.?\\d*)\\]")
+    // 将正则表达式提取为静态变量，避免重复编译损耗性能；编译失败时直接降级为空结果。
+    private static let timeTagRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: "\\[(\\d+):(\\d+\\.?\\d*)\\]")
+    }()
     
     static func parse(url: URL) -> [LyricLine] {
         // 1. 优先尝试 UTF-8 编码读取
@@ -40,17 +41,18 @@ struct LRCParser {
         var lyrics: [LyricLine] = []
         let lines = content.components(separatedBy: .newlines)
         
+        guard let regex = timeTagRegex else { return [] }
+        
         for line in lines {
-            if line.trimmingCharacters(in: .whitespaces).isEmpty { continue }
+            if line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
             
             let nsString = line as NSString
-            let matches = timeTagRegex.matches(in: line, range: NSRange(location: 0, length: nsString.length))
+            let matches = regex.matches(in: line, range: NSRange(location: 0, length: nsString.length))
             
             // 跳过不含时间戳的元数据行 (如 [ti:标题])
-            guard !matches.isEmpty else { continue }
+            guard !matches.isEmpty, let lastMatch = matches.last else { continue }
             
             // 文本内容位于该行最后一个时间戳之后
-            let lastMatch = matches.last!
             let textStartLocation = lastMatch.range.location + lastMatch.range.length
             let text = nsString.substring(from: textStartLocation).trimmingCharacters(in: .whitespaces)
             
@@ -59,10 +61,9 @@ struct LRCParser {
                 let minStr = nsString.substring(with: match.range(at: 1))
                 let secStr = nsString.substring(with: match.range(at: 2))
                 
-                if let min = Double(minStr), let sec = Double(secStr) {
-                    let time = min * 60 + sec
-                    lyrics.append(LyricLine(startTime: time, text: text))
-                }
+                guard let min = Double(minStr), let sec = Double(secStr) else { continue }
+                let time = min * 60 + sec
+                lyrics.append(LyricLine(startTime: time, text: text))
             }
         }
         return lyrics.sorted()

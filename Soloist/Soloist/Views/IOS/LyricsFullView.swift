@@ -165,7 +165,7 @@ struct PlayerProgressView: View {
     
     // 用于平滑显示的本地时间，脱离 playerService 的低频刷新
     @State private var smoothTime: Double = 0
-    @State private var dragProgress: Double? = nil
+    @GestureState private var dragProgress: Double? = nil
     
     var body: some View {
         VStack(spacing: 12) {
@@ -193,19 +193,18 @@ struct PlayerProgressView: View {
                 .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 0)
+                        .updating($dragProgress) { value, state, _ in
+                            state = min(max(0, value.location.x / geo.size.width), 1)
+                        }
                         .onChanged { value in
                             let percentage = min(max(0, value.location.x / geo.size.width), 1)
-                            dragProgress = percentage
                             smoothTime = percentage * duration // 拖动时，时间文字实时跟着变
                         }
                         .onEnded { value in
                             let percentage = min(max(0, value.location.x / geo.size.width), 1)
-                            playerService.seek(to: percentage * duration)
-                            
-                            // 稍微延迟 0.2 秒再释放拖动状态，防止由于播放器时间还没跟上导致的“指针回闪”现象
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                dragProgress = nil
-                            }
+                            let targetTime = percentage * duration
+                            playerService.seek(to: targetTime)
+                            smoothTime = targetTime
                         }
                 )
             }

@@ -76,15 +76,11 @@ struct ScrollingLyricsView: View {
                                 endPoint: .bottom
                             )
                         )
-                        // 监听变化时调用独立函数
-                        .onChange(of: activeLineID) {
+                        // 首次布局完成后再执行滚动，避免固定延迟带来的竞态
+                        .task(id: activeLineID) {
+                            guard !playerService.lyrics.isEmpty else { return }
+                            await Task.yield()
                             scrollToCurrent(proxy: proxy)
-                        }
-                        // 视图刚出现时，延迟一点点执行初始滚动
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                scrollToCurrent(proxy: proxy)
-                            }
                         }
                     }
                 }
