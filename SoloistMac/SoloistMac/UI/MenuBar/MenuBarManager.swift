@@ -28,6 +28,20 @@ class MenuBarManager {
         constructMenu()
     }
     
+    @MainActor
+    func showMusicUI(showFloatingWindow: Bool) {
+        mount()
+        if showFloatingWindow {
+            LyricsWindowManager.shared.show()
+        }
+    }
+    
+    @MainActor
+    func hideMusicUI() {
+        LyricsWindowManager.shared.hide()
+        unmount()
+    }
+    
     private func constructMenu() {
         let menu = NSMenu()
         

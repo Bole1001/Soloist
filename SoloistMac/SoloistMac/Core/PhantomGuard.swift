@@ -37,22 +37,16 @@ class PhantomGuard {
     
     // MARK: - 时间齿轮
     @ObservationIgnored private var displayTimer: Timer?
-    @ObservationIgnored private var syncCounter = 0
+    @ObservationIgnored private var lastMusicAccessError: String?
+    @ObservationIgnored private var lastTickDate: Date?
+    @ObservationIgnored private var lastCalibrationDate: Date?
     
     private init() {
         setupBindings()
-        
-        // 注册应用终止系统监听
-        NSWorkspace.shared.notificationCenter.addObserver(
-            self,
-            selector: #selector(handleAppTermination(_:)),
-            name: NSWorkspace.didTerminateApplicationNotification,
-            object: nil
-        )
     }
     
     deinit {
-        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        musicMonitor.stop()
     }
     
     private func setupBindings() {
@@ -66,23 +60,35 @@ class PhantomGuard {
             self.refreshUIComponents()
         }
         
-        musicMonitor.onTrackChanged = { [weak self] state, location in
+        musicMonitor.onMusicAppTerminated = { [weak self] in
+            guard let self = self else { return }
+            print("⚠️ 监测到 Apple Music 已退出，Soloist 进入休眠模式")
+            
+            self.stopTimeGear()
+            self.isAppleMusicRunning = false
+            self.playbackState = "Stopped"
+            self.currentLyrics = []
+            self.currentLineIndex = nil
+            self.currentTrackLocation = ""
+            
+            self.menuBarManager.hideMusicUI()
+        }
+        
+        musicMonitor.onTrackChanged = { [weak self] event in
             guard let self = self else { return }
             
+            let location = event.location
             let isRealTrackChange = (self.currentTrackLocation != location && !location.isEmpty)
             
-            self.playbackState = state
+            self.playbackState = event.state.rawValue
             
-            if state == "Playing" {
+            if event.state == .playing {
                 if isRealTrackChange {
                     print("📁 切歌重载！旧: \(self.currentTrackLocation) -> 新: \(location)")
                     self.currentTrackLocation = location
                     
-                    if let url = URL(string: location) {
-                        let songName = url.deletingPathExtension().lastPathComponent
-                        self.menuBarManager.updateMenuInfo(text: "\(songName)")
-                    }
-                    
+                    let displayName = self.resolveDisplayName(from: event, location: location)
+                    self.menuBarManager.updateMenuInfo(text: displayName)
                     self.currentLyrics = LyricEngine.loadLyrics(for: location)
                     self.currentLineIndex = nil
                 }
@@ -99,46 +105,18 @@ class PhantomGuard {
     
     /// 统一处理菜单栏和悬浮窗的显示，解决自动启动不出现的 Bug
     private func refreshUIComponents() {
-        // 1. 挂载菜单栏
-        self.menuBarManager.mount()
-        
-        // 2. 如果开启了悬浮窗，自动显示
-        if self.showFloatingWindow {
-            // 给系统 200ms 缓冲，确保 UI 线程完全就绪
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                LyricsWindowManager.shared.show()
-            }
-        }
-    }
-    
-    // MARK: - 进程生命周期监听
-    @objc private func handleAppTermination(_ notification: Notification) {
-        if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
-            if app.bundleIdentifier == "com.apple.Music" {
-                print("⚠️ 监测到 Apple Music 已退出，Soloist 进入休眠模式")
-                
-                self.stopTimeGear()
-                self.isAppleMusicRunning = false
-                self.playbackState = "Stopped"
-                self.currentLyrics = []
-                self.currentLineIndex = nil
-                self.currentTrackLocation = ""
-                
-                DispatchQueue.main.async {
-                    LyricsWindowManager.shared.hide()
-                    self.menuBarManager.unmount()
-                }
-            }
-        }
+        self.menuBarManager.showMusicUI(showFloatingWindow: self.showFloatingWindow)
     }
     
     // MARK: - 时间同步逻辑
     
     private func startTimeGear() {
         stopTimeGear()
-        if let realTime = MusicController.getCurrentPosition() {
+        if let realTime = currentPlaybackTimeFromMusic() {
             self.currentPlaybackTime = realTime
         }
+        lastTickDate = Date()
+        lastCalibrationDate = Date()
         
         displayTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             self?.tick()
@@ -151,21 +129,28 @@ class PhantomGuard {
     private func stopTimeGear() {
         displayTimer?.invalidate()
         displayTimer = nil
-        syncCounter = 0
+        lastTickDate = nil
+        lastCalibrationDate = nil
     }
     
     private func tick() {
         guard playbackState == "Playing" else { return }
         
-        currentPlaybackTime += 0.1
-        syncCounter += 1
+        let now = Date()
+        if let lastTickDate {
+            let delta = now.timeIntervalSince(lastTickDate)
+            if delta > 0 {
+                currentPlaybackTime += delta
+            }
+        }
+        self.lastTickDate = now
         
-        if syncCounter >= 10 {
-            syncCounter = 0
-            if let realTime = MusicController.getCurrentPosition() {
-                if abs(realTime - currentPlaybackTime) > 0.5 {
-                    self.currentPlaybackTime = realTime
-                }
+        if let lastCalibrationDate,
+           now.timeIntervalSince(lastCalibrationDate) >= 5.0 {
+            self.lastCalibrationDate = now
+            if let realTime = currentPlaybackTimeFromMusic(),
+               abs(realTime - currentPlaybackTime) > 0.35 {
+                self.currentPlaybackTime = realTime
             }
         }
         
@@ -198,7 +183,7 @@ class PhantomGuard {
             
             refreshUIComponents()
             
-            if let _ = MusicController.getCurrentPosition() {
+            if let _ = currentPlaybackTimeFromMusic() {
                 playbackState = "Playing"
                 startTimeGear()
             }
@@ -208,6 +193,37 @@ class PhantomGuard {
     func handleReopen() {
         if !isAppleMusicRunning {
             menuBarManager.mount()
+        }
+    }
+    
+    private func resolveDisplayName(from event: MusicMonitor.TrackEvent, location: String) -> String {
+        if let title = event.title, !title.isEmpty {
+            return title
+        }
+        
+        if let playerName = event.playerName, !playerName.isEmpty {
+            return playerName
+        }
+        
+        if let url = URL(string: location) {
+            return url.deletingPathExtension().lastPathComponent
+        }
+        
+        return location.isEmpty ? "未知歌曲" : location
+    }
+    
+    private func currentPlaybackTimeFromMusic() -> Double? {
+        switch MusicController.readCurrentPosition() {
+        case .success(let realTime):
+            lastMusicAccessError = nil
+            return realTime
+        case .failure(let error):
+            let message = error.description
+            if lastMusicAccessError != message {
+                print("⚠️ 读取 Apple Music 播放位置失败：\(message)")
+                lastMusicAccessError = message
+            }
+            return nil
         }
     }
 }
