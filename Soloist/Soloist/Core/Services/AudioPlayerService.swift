@@ -15,7 +15,7 @@ import UIKit
 ///
 /// **职责**: 作为 App 的核心播放控制器，协调音频引擎、播放列表、歌词管理和系统媒体中心。
 /// **层级**: Core Layer (最高级服务)。
-/// **单例**: `shared` 实例供全 App 共享状态。
+/// **单例**: `shared` 作为 App 内唯一的播放协调器，供界面、系统媒体中心和快捷指令共用。
 ///
 /// 它是一个 `ObservableObject`，所有 UI 视图（Mac/iOS/Watch）都通过监听它的 `@Published` 属性来更新界面。
 class AudioPlayerService: NSObject, ObservableObject, NSUserActivityDelegate {

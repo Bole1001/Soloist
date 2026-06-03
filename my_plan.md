@@ -136,13 +136,13 @@
 
 ## 第 6 阶段：依赖控制与单例管理
 
-- [ ] **iOS-6.1** 评估 `AudioPlayerService.shared` 单例的必要性
+- [x] **iOS-6.1** 评估 `AudioPlayerService.shared` 单例的必要性
   - 文件：`Soloist/Core/Services/AudioPlayerService.swift`
-  - 具体：考虑改为 `@StateObject` 或依赖注入
+  - 具体：保留为 App 级唯一播放协调器，供主界面、系统媒体中心和快捷指令共用
 
-- [ ] **iOS-6.2** 评估 `UserPlaylistManager` / `LocalLibraryService` 是否需要全局共享
+- [x] **iOS-6.2** 评估 `UserPlaylistManager` / `LocalLibraryService` 是否需要全局共享
   - 文件：`Soloist/Core/Services/UserPlaylistManager.swift`、`Soloist/Core/Services/LocalLibraryService.swift`
-  - 具体：明确是否必须全局共享或可转为组件局部
+  - 具体：由 `SoloistApp` 统一持有并注入视图层，不改成全局共享单例
 
 - [x] **macOS-6.3** 评估 `PhantomGuard.shared` / `MenuBarManager.shared` / `LyricsWindowManager.shared`
   - 文件：`SoloistMac/Core/PhantomGuard.swift`、`SoloistMac/UI/MenuBar/MenuBarManager.swift`、`SoloistMac/UI/Windows/LyricsWindowManager.swift`

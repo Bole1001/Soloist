@@ -91,6 +91,7 @@ struct PlayPlaylistIntent: AppIntent {
         #endif
         
         try await MainActor.run {
+            // 快捷指令运行在独立进程里，这里按需读取持久化数据，不长期持有 App 的环境对象。
             let manager = UserPlaylistManager()
             let library = LocalLibraryService()
             
