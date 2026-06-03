@@ -31,6 +31,8 @@ class PhantomGuard {
     var currentLineIndex: Int? = nil
     var currentPlaybackTime: Double = 0.0
     var currentTrackLocation: String = ""
+    var currentTrackTitle: String = ""
+    var currentTrackArtist: String = ""
     
     @ObservationIgnored private let musicMonitor = MusicMonitor()
     @ObservationIgnored private let menuBarManager = MenuBarManager()
@@ -72,7 +74,9 @@ class PhantomGuard {
             self.currentLyrics = []
             self.currentLineIndex = nil
             self.currentTrackLocation = ""
-            
+            self.currentTrackTitle = ""
+            self.currentTrackArtist = ""
+
             self.lyricsWindowManager.hide()
             self.menuBarManager.unmount()
         }
@@ -86,12 +90,12 @@ class PhantomGuard {
             self.playbackState = event.state.rawValue
             
             if event.state == .playing {
-                if isRealTrackChange {
+                let displayName = self.resolveDisplayName(from: event, location: location)
+                if isRealTrackChange || self.currentTrackTitle != displayName {
                     print("📁 切歌重载！旧: \(self.currentTrackLocation) -> 新: \(location)")
                     self.currentTrackLocation = location
-                    
-                    let displayName = self.resolveDisplayName(from: event, location: location)
-                    self.menuBarManager.updateMenuInfo(text: displayName)
+                    self.currentTrackTitle = displayName
+                    self.currentTrackArtist = self.resolveArtistName(from: event)
                     switch LyricEngine.loadLyrics(for: location) {
                     case .success(let lyrics):
                         self.currentLyrics = lyrics
@@ -104,11 +108,13 @@ class PhantomGuard {
                         self.menuBarManager.updateLyricsTitle(text: nil)
                     }
                 }
-                
+                self.refreshMenuBarPlaybackState()
                 self.startTimeGear()
+            } else if event.state == .paused {
+                self.refreshMenuBarPlaybackState()
             } else {
                 self.stopTimeGear()
-                self.menuBarManager.updateMenuInfo(text: "⏸️ 已暂停")
+                self.refreshMenuBarPlaybackState()
             }
         }
     }
@@ -142,6 +148,40 @@ class PhantomGuard {
             }
         }
 
+        menuBarManager.onTogglePlayPause = { [weak self] in
+            guard let self = self else { return }
+            switch MusicController.togglePlayPause() {
+            case .success:
+                self.playbackState = (self.playbackState == "Playing") ? "Paused" : "Playing"
+                self.refreshMenuBarPlaybackState()
+                break
+            case .failure(let error):
+                print("⚠️ [PhantomGuard] 播放/暂停失败: \(error.localizedDescription)")
+            }
+        }
+
+        menuBarManager.onNextTrack = { [weak self] in
+            guard let self = self else { return }
+            switch MusicController.nextTrack() {
+            case .success:
+                self.refreshMenuBarPlaybackState()
+                break
+            case .failure(let error):
+                print("⚠️ [PhantomGuard] 下一首失败: \(error.localizedDescription)")
+            }
+        }
+
+        menuBarManager.onPreviousTrack = { [weak self] in
+            guard let self = self else { return }
+            switch MusicController.previousTrack() {
+            case .success:
+                self.refreshMenuBarPlaybackState()
+                break
+            case .failure(let error):
+                print("⚠️ [PhantomGuard] 上一首失败: \(error.localizedDescription)")
+            }
+        }
+
         menuBarManager.onToggleLock = {
             Preferences.shared.isWindowLocked.toggle()
             self.menuBarManager.syncState(
@@ -167,6 +207,7 @@ class PhantomGuard {
             showFloatingWindow: self.showFloatingWindow,
             isWindowLocked: Preferences.shared.isWindowLocked
         )
+        self.refreshMenuBarPlaybackState()
         if self.showFloatingWindow {
             self.lyricsWindowManager.show()
         } else {
@@ -264,7 +305,42 @@ class PhantomGuard {
                 showFloatingWindow: self.showFloatingWindow,
                 isWindowLocked: Preferences.shared.isWindowLocked
             )
+            refreshMenuBarPlaybackState()
         }
+    }
+
+    private func refreshMenuBarPlaybackState() {
+        menuBarManager.syncPlaybackState(
+            isAppleMusicRunning: isAppleMusicRunning,
+            isPlaying: playbackState == "Playing",
+            displayText: playbackMenuText()
+        )
+    }
+
+    private func playbackMenuText() -> String {
+        if !isAppleMusicRunning {
+            return "Apple Music 未运行"
+        }
+
+        switch playbackState {
+        case "Playing":
+            return menuBarTrackText()
+        case "Paused":
+            return menuBarTrackText()
+        default:
+            return "未在播放"
+        }
+    }
+
+    private func menuBarTrackText() -> String {
+        let title = currentTrackTitle.isEmpty ? "未知歌曲" : currentTrackTitle
+        let artist = currentTrackArtist.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !artist.isEmpty else {
+            return title
+        }
+
+        return "\(title) - \(artist)"
     }
     
     private func resolveDisplayName(from event: MusicMonitor.TrackEvent, location: String) -> String {
@@ -281,6 +357,18 @@ class PhantomGuard {
         }
         
         return location.isEmpty ? "未知歌曲" : location
+    }
+
+    private func resolveArtistName(from event: MusicMonitor.TrackEvent) -> String {
+        if let artist = event.artist, !artist.isEmpty {
+            return artist
+        }
+
+        if let playerName = event.playerName, !playerName.isEmpty {
+            return playerName
+        }
+
+        return ""
     }
     
     private func currentPlaybackTimeFromMusic() -> Double? {

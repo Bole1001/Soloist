@@ -19,6 +19,7 @@ class MusicMonitor {
         let state: PlaybackState
         let location: String
         let playerName: String?
+        let artist: String?
         let title: String?
     }
     
@@ -74,12 +75,14 @@ class MusicMonitor {
         let state = resolvePlaybackState(from: userInfo)
         let location = resolveStringValue(for: ["Location", "Location URL", "File Path"], in: userInfo) ?? ""
         let playerName = resolveStringValue(for: ["Player Name", "Player"], in: userInfo)
+        let artist = resolveStringValue(for: ["Artist", "Track Artist", "Album Artist"], in: userInfo)
         let title = resolveStringValue(for: ["Name", "Title", "Song Name"], in: userInfo)
         
         let event = TrackEvent(
             state: state,
             location: location,
             playerName: playerName,
+            artist: artist,
             title: title
         )
         

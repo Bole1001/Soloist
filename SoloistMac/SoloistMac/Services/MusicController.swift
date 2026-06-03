@@ -23,6 +23,7 @@ struct MusicController {
         case applicationUnavailable
         case bridgeUnavailable
         case playerPositionUnavailable
+        case commandUnavailable(String)
         
         var description: String {
             switch self {
@@ -34,6 +35,8 @@ struct MusicController {
                 return "Apple Music 桥接不可用"
             case .playerPositionUnavailable:
                 return "无法读取播放位置"
+            case .commandUnavailable(let command):
+                return "Apple Music 不支持 \(command) 控制"
             }
         }
     }
@@ -68,5 +71,35 @@ struct MusicController {
             return position
         }
         return nil
+    }
+
+    static func togglePlayPause() -> Result<Void, AccessError> {
+        performPlaybackCommand(selectorName: "playpause", displayName: "播放/暂停")
+    }
+
+    static func nextTrack() -> Result<Void, AccessError> {
+        performPlaybackCommand(selectorName: "nextTrack", displayName: "下一首")
+    }
+
+    static func previousTrack() -> Result<Void, AccessError> {
+        performPlaybackCommand(selectorName: "previousTrack", displayName: "上一首")
+    }
+
+    private static func performPlaybackCommand(selectorName: String, displayName: String) -> Result<Void, AccessError> {
+        guard let app = musicApp else {
+            return .failure(.applicationUnavailable)
+        }
+
+        guard app.isRunning else {
+            return .failure(.appNotRunning)
+        }
+
+        let selector = NSSelectorFromString(selectorName)
+        guard app.responds(to: selector) else {
+            return .failure(.commandUnavailable(displayName))
+        }
+
+        _ = app.perform(selector)
+        return .success(())
     }
 }

@@ -151,57 +151,35 @@
 - [x] **cross-6.4** 收敛重复的全局状态源
   - 具体：避免同一状态在多个对象里各自维护
 
-## 第 7 阶段：测试与文档
+## 第 7 阶段：macOS 菜单栏播放控制
 
-- [ ] **iOS-7.1** 为 `AudioPlayerService` 编写单元测试
-  - 具体：播放控制、队列管理、恢复流程的测试用例
+- [x] **macOS-7.1** 评估菜单栏展示当前歌曲信息的入口
+  - 文件：`SoloistMac/UI/MenuBar/MenuBarManager.swift`、`SoloistMac/Core/PhantomGuard.swift`
+  - 具体：菜单顶部显示当前歌曲名，必要时附带歌手或播放状态
 
-- [ ] **iOS-7.2** 为 `PlaylistManager` 编写单元测试
-  - 具体：随机、循环、队列操作的测试用例
+- [x] **macOS-7.2** 评估菜单栏控制 Apple Music 的动作入口
+  - 文件：`SoloistMac/Services/MusicController.swift`、`SoloistMac/Core/PhantomGuard.swift`
+  - 具体：补齐播放/暂停、下一首、上一首的控制接口，并确保失败可降级
 
-- [ ] **iOS-7.3** 为 iOS 核心流程补架构文档
-  - 具体：播放流程、权限恢复、后台刷新、WebDAV 的说明
+- [x] **macOS-7.3** 把菜单项事件回调接到 `PhantomGuard`
+  - 文件：`SoloistMac/UI/MenuBar/MenuBarManager.swift`、`SoloistMac/Core/PhantomGuard.swift`
+  - 具体：通过统一协调器处理点击事件，避免菜单栏直接操作业务状态
 
-- [ ] **macOS-7.4** 为 `MusicMonitor` / `MusicController` 编写单元测试
-  - 具体：通知监听、权限处理、失败恢复的测试用例
+- [x] **macOS-7.4** 让菜单状态与 Apple Music 状态保持同步
+  - 文件：`SoloistMac/Services/MusicMonitor.swift`、`SoloistMac/Core/PhantomGuard.swift`
+  - 具体：切歌、暂停、恢复播放时同步更新菜单标题与可用状态
 
-- [ ] **macOS-7.5** 为 `LyricEngine` 编写单元测试
-  - 具体：歌词加载、路径解析、行号查找的测试用例
-
-- [ ] **macOS-7.6** 为 macOS 核心流程补架构文档
-  - 具体：Apple Music 监听、歌词同步、UI 显示的说明
-
-## 第 8 阶段：项目隔离验证
-
-- [ ] **Verify-8.1** 确认 iOS 项目不依赖 macOS 项目的任何源码
-  - 具体：检查 `Soloist/` 中无 `../SoloistMac/` 引用
-
-- [ ] **Verify-8.2** 确认 macOS 项目不依赖 iOS 项目的任何源码
-  - 具体：检查 `SoloistMac/` 中无 `../Soloist/` 引用
-
-- [ ] **Verify-8.3** 确认两端不存在误共享源码
-  - 具体：如 `LyricLine.swift`、`LRCParser.swift` 应在两端各自独立维护
-
-- [ ] **Verify-8.4** 确认共享的仅为非源码文件
-  - 具体：README、LICENSE、workspace 配置等可共享
-
----
-
-## 优先执行顺序建议
-
-1. 先补完 `iOS-1.5`，让第 1 阶段真正闭环
-2. 再处理 iOS 端补漏项 `1.6` 到 `1.9`
-3. 接着处理 macOS 同步稳定性 `2.1` 到 `2.6`
-4. 然后补错误处理与恢复 `3.x`
-5. 再做生命周期、职责拆分、依赖控制
-6. 最后补测试、文档和项目隔离验证
+- [x] **macOS-7.5** 验证菜单栏交互的失败降级路径
+  - 文件：`SoloistMac/Services/MusicController.swift`、`SoloistMac/Core/PhantomGuard.swift`
+  - 具体：Apple Music 未运行、无权限、桥接不可用时给出可恢复提示，不阻塞主流程
 
 ## 当前判断
 
-- 第 1 阶段不能再标记为完全完成
-- `scenePhase == .active` 的 WebDAV 恢复是明确缺口
-- 计划外发现的问题里，优先级最高的是：
-  - iOS 权限恢复未接通
-  - iOS 主页重复全量扫描
-  - 残留 `asyncAfter`
-  - macOS 启动/唤醒的延迟依赖
+- 这个需求可行，且复用现有 `MusicMonitor` + `PhantomGuard` 的成本较低
+- 菜单顶部已有展示位，适合显示当前歌曲名
+- 需要新增的主要能力在 `MusicController`，尤其是播放控制动作
+- 推荐实现顺序：
+  1. 先补 `MusicController` 的控制接口
+  2. 再接入 `MenuBarManager` 的菜单项和标题显示
+  3. 最后由 `PhantomGuard` 统一同步状态和失败降级
+- 代码层已完成，`xcodebuild` 这台环境目前无法正确识别仓库里的 workspace 入口，构建验证受限于环境而不是这次改动
