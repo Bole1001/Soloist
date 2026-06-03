@@ -9,7 +9,6 @@ import AppKit
 
 @MainActor
 class MenuBarManager {
-    static let shared = MenuBarManager()
     private var statusItem: NSStatusItem?
     private var menuBarLyricsItem: NSMenuItem?
     private var floatingWindowItem: NSMenuItem?
@@ -31,20 +30,6 @@ class MenuBarManager {
             button.imagePosition = .imageRight
         }
         constructMenu()
-    }
-    
-    @MainActor
-    func showMusicUI(showFloatingWindow: Bool) {
-        mount()
-        if showFloatingWindow {
-            LyricsWindowManager.shared.show()
-        }
-    }
-    
-    @MainActor
-    func hideMusicUI() {
-        LyricsWindowManager.shared.hide()
-        unmount()
     }
     
     private func constructMenu() {
@@ -118,7 +103,11 @@ class MenuBarManager {
     }
     
     @objc private func quitApp() {
-        onQuit?() ?? NSApplication.shared.terminate(nil)
+        if let onQuit {
+            onQuit()
+        } else {
+            NSApplication.shared.terminate(nil)
+        }
     }
     
     func unmount() {

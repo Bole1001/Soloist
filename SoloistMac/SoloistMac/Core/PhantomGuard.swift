@@ -33,7 +33,8 @@ class PhantomGuard {
     var currentTrackLocation: String = ""
     
     @ObservationIgnored private let musicMonitor = MusicMonitor()
-    @ObservationIgnored private let menuBarManager = MenuBarManager.shared
+    @ObservationIgnored private let menuBarManager = MenuBarManager()
+    @ObservationIgnored private let lyricsWindowManager = LyricsWindowManager()
     
     // MARK: - 时间齿轮
     @ObservationIgnored private var displayTimer: Timer?
@@ -72,7 +73,8 @@ class PhantomGuard {
             self.currentLineIndex = nil
             self.currentTrackLocation = ""
             
-            self.menuBarManager.hideMusicUI()
+            self.lyricsWindowManager.hide()
+            self.menuBarManager.unmount()
         }
         
         musicMonitor.onTrackChanged = { [weak self] event in
@@ -134,9 +136,9 @@ class PhantomGuard {
                 isWindowLocked: Preferences.shared.isWindowLocked
             )
             if self.showFloatingWindow {
-                LyricsWindowManager.shared.show()
+                self.lyricsWindowManager.show()
             } else {
-                LyricsWindowManager.shared.hide()
+                self.lyricsWindowManager.hide()
             }
         }
 
@@ -147,7 +149,7 @@ class PhantomGuard {
                 showFloatingWindow: self.showFloatingWindow,
                 isWindowLocked: Preferences.shared.isWindowLocked
             )
-            LyricsWindowManager.shared.updateLockState()
+            self.lyricsWindowManager.updateLockState()
         }
 
         menuBarManager.onQuit = {
@@ -159,12 +161,17 @@ class PhantomGuard {
     
     /// 统一处理菜单栏和悬浮窗的显示，解决自动启动不出现的 Bug
     private func refreshUIComponents() {
-        self.menuBarManager.showMusicUI(showFloatingWindow: self.showFloatingWindow)
+        self.menuBarManager.mount()
         self.menuBarManager.syncState(
             showMenuBarLyrics: self.showMenuBarLyrics,
             showFloatingWindow: self.showFloatingWindow,
             isWindowLocked: Preferences.shared.isWindowLocked
         )
+        if self.showFloatingWindow {
+            self.lyricsWindowManager.show()
+        } else {
+            self.lyricsWindowManager.hide()
+        }
     }
     
     // MARK: - 时间同步逻辑

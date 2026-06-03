@@ -9,7 +9,6 @@ import AppKit
 import SwiftUI
 
 class LyricsWindowManager: NSObject, NSWindowDelegate {
-    static let shared = LyricsWindowManager()
     private var window: NSPanel?
     private let prefs = Preferences.shared
     
