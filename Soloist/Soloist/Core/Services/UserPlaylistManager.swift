@@ -35,11 +35,18 @@ class UserPlaylistManager: ObservableObject {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return docs.appendingPathComponent("user_playlists.json")
     }()
-    
+
     init() {
         loadFavorites()
         loadCustomPlaylists()
-        
+        bindLibraryUpdates()
+    }
+
+    deinit {
+        cancellables.removeAll()
+    }
+
+    private func bindLibraryUpdates() {
         // 监听曲库刷新信号，执行垃圾回收
         NotificationCenter.default.publisher(for: .libraryDidUpdate)
             .compactMap { $0.userInfo?["validIDs"] as? Set<String> }

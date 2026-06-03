@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// iOS 端主页视图 (IphoneHomeView)
 struct IphoneHomeView: View {
@@ -17,9 +16,9 @@ struct IphoneHomeView: View {
     // 根据搜索内容过滤后的歌曲列表
     private var filteredSongs: [Song] {
         if searchText.isEmpty {
-            return libraryService.songs
+            return localLibrary.songs
         } else {
-            return libraryService.songs.filter { song in
+            return localLibrary.songs.filter { song in
                 song.title.localizedCaseInsensitiveContains(searchText) ||
                 song.artist.localizedCaseInsensitiveContains(searchText)
             }
@@ -31,13 +30,12 @@ struct IphoneHomeView: View {
     // 临时记录准备删除的歌曲实体
     @State private var pendingDeleteSongs: [Song] = []
     
-    // MARK: - State Objects
-    @StateObject private var libraryService = LocalLibraryService()
+    // MARK: - Environment Objects
+    @EnvironmentObject var localLibrary: LocalLibraryService
     @EnvironmentObject var playerService: AudioPlayerService
     
     // 页面状态
     @State private var showLyricsPage = false
-    @State private var showFileImporter = false
     @State private var currentArtworkData: Data? = nil
     
     // 控制播放列表弹窗的状态
@@ -98,7 +96,7 @@ struct IphoneHomeView: View {
             
             // Tab 4: 设置
             Tab("设置", systemImage: "gearshape.fill", value: "settings") {
-                SettingsPage(libraryService: libraryService, artworkData: currentArtworkData)
+                SettingsPage(artworkData: currentArtworkData)
             }
         }
         
@@ -133,8 +131,8 @@ struct IphoneHomeView: View {
         .onAppear {
             guard !didAttemptInitialLibraryLoad else { return }
             didAttemptInitialLibraryLoad = true
-            if libraryService.songs.isEmpty {
-                libraryService.loadLocalDocuments()
+            if localLibrary.songs.isEmpty {
+                _ = localLibrary.loadLocalDocuments()
             }
         }
         .task(id: playerService.currentSong?.id) {
@@ -153,10 +151,10 @@ struct IphoneHomeView: View {
             IOSBackgroundView(artworkData: currentArtworkData)
             NavigationStack {
                 Group {
-                    if libraryService.songs.isEmpty {
+                    if localLibrary.songs.isEmpty {
                         emptyStateView
                     } else {
-                        buildSongList(songs: libraryService.songs)
+                        buildSongList(songs: localLibrary.songs)
                     }
                 }
                 .navigationTitle("本地音乐")
@@ -171,7 +169,7 @@ struct IphoneHomeView: View {
                 SongListRow(
                     song: song,
                     isPlaying: playerService.currentSong?.id == song.id,
-                    onPlay: { playerService.play(song: song, playlist: libraryService.songs) },
+                    onPlay: { playerService.play(song: song, playlist: localLibrary.songs) },
                     onAdd: { playerService.addToNext(song: song) }
                 )
                 .buttonStyle(.plain)
@@ -211,8 +209,8 @@ struct IphoneHomeView: View {
         .alert("确认删除", isPresented: $showDeleteConfirmation) {
             Button("删除歌曲", role: .destructive) {
                 for song in pendingDeleteSongs {
-                    if let realIndex = libraryService.songs.firstIndex(where: { $0.id == song.id }) {
-                        libraryService.deleteSongs(at: IndexSet(integer: realIndex))
+                    if let realIndex = localLibrary.songs.firstIndex(where: { $0.id == song.id }) {
+                        localLibrary.deleteSongs(at: IndexSet(integer: realIndex))
                     }
                 }
                 pendingDeleteSongs.removeAll()
@@ -232,7 +230,7 @@ struct IphoneHomeView: View {
                 .font(.system(size: 60))
                 .foregroundStyle(.secondary)
             Text("暂无本地音乐").font(.headline)
-            Button("立即导入") { showFileImporter = true }
+            Button("前往设置导入") { selection = "settings" }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
         }

@@ -9,9 +9,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SettingsPage: View {
-    // 接收主页传进来的 libraryService
-    @ObservedObject var libraryService: LocalLibraryService
-    
+    @EnvironmentObject var localLibrary: LocalLibraryService
     // ✨ 注入全局的网络服务环境变量
     @EnvironmentObject var webDAVService: WebDAVService
     
@@ -70,7 +68,7 @@ struct SettingsPage: View {
                         }
                         
                         // 2. 刷新按钮
-                        Button(action: { libraryService.loadLocalDocuments() }) {
+                        Button(action: { _ = localLibrary.loadLocalDocuments() }) {
                             Label("刷新媒体库", systemImage: "arrow.triangle.2.circlepath")
                                 .foregroundStyle(.primary)
                         }
@@ -95,7 +93,7 @@ struct SettingsPage: View {
                     allowsMultipleSelection: true
                 ) { result in
                     if case .success(let urls) = result {
-                        libraryService.importSongs(from: urls)
+                        _ = localLibrary.importSongs(from: urls)
                     }
                 }
             }

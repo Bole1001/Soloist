@@ -286,8 +286,11 @@ class LocalLibraryService: ObservableObject {
         
     /// 手动刷新当前库 (用于检测新歌)
     @discardableResult
-    func refreshLibrary() -> Result<Void, LocalLibraryError> {
+    func refreshLibrary(silentIfNoAccess: Bool = false) -> Result<Void, LocalLibraryError> {
         guard let url = accessingURL else {
+            if silentIfNoAccess {
+                return .success(())
+            }
             return reportError(.missingBookmark)
         }
         

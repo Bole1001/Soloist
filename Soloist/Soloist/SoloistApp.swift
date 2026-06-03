@@ -35,13 +35,15 @@ struct SoloistApp: App {
                 // .onContinueUserActivity("com.soloist.handoff.playback", perform: handleHandoff) // Handoff disabled
         }
         // 生命周期管理：后台停止服务器并刷新歌曲列表
-        .onChange(of: scenePhase) { oldPhase, newPhase in
+        .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
+            case .active:
+                _ = localLibrary.restorePermission()
+            case .inactive:
+                break
             case .background:
                 webDAVService.stopServer()
-                localLibrary.refreshLibrary()
-            default:
-                break
+                _ = localLibrary.refreshLibrary(silentIfNoAccess: true)
             }
         }
     }
