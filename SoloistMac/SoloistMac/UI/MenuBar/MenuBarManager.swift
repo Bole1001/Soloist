@@ -11,9 +11,14 @@ import AppKit
 class MenuBarManager {
     static let shared = MenuBarManager()
     private var statusItem: NSStatusItem?
-    
-    // 引入我们的记忆中枢
-    private let prefs = Preferences.shared
+    private var menuBarLyricsItem: NSMenuItem?
+    private var floatingWindowItem: NSMenuItem?
+    private var lockItem: NSMenuItem?
+
+    var onToggleMenuBarLyrics: (() -> Void)?
+    var onToggleFloatingWindow: (() -> Void)?
+    var onToggleLock: (() -> Void)?
+    var onQuit: (() -> Void)?
     
     func mount() {
         guard statusItem == nil else { return }
@@ -56,22 +61,25 @@ class MenuBarManager {
         // 2. 状态栏开关 (接入记忆)
         let menuBarLyricItem = NSMenuItem(title: "状态栏歌词", action: #selector(toggleMenuBarLyrics), keyEquivalent: "b")
         menuBarLyricItem.target = self
-        menuBarLyricItem.state = prefs.showMenuBarLyrics ? .on : .off
+        menuBarLyricItem.state = .off
         menu.addItem(menuBarLyricItem)
+        self.menuBarLyricsItem = menuBarLyricItem
         
         // 3. 悬浮窗开关 (接入记忆)
         let floatingWindowItem = NSMenuItem(title: "桌面悬浮窗", action: #selector(toggleFloatingWindow), keyEquivalent: "w")
         floatingWindowItem.target = self
-        floatingWindowItem.state = prefs.showFloatingWindow ? .on : .off
+        floatingWindowItem.state = .off
         menu.addItem(floatingWindowItem)
+        self.floatingWindowItem = floatingWindowItem
         
         // 4. 新增：锁定开关 (Tag 101)
         let lockItem = NSMenuItem(title: "锁定歌词位置", action: #selector(toggleLock), keyEquivalent: "l")
         lockItem.target = self
-        lockItem.state = prefs.isWindowLocked ? .on : .off
-        lockItem.isEnabled = prefs.showFloatingWindow
+        lockItem.state = .off
+        lockItem.isEnabled = false
         lockItem.tag = 101
         menu.addItem(lockItem)
+        self.lockItem = lockItem
         
         menu.addItem(NSMenuItem.separator())
         
@@ -97,44 +105,46 @@ class MenuBarManager {
     
     // MARK: - 事件响应
     
-    @objc private func toggleMenuBarLyrics(_ sender: NSMenuItem) {
-        prefs.showMenuBarLyrics.toggle()
-        sender.state = prefs.showMenuBarLyrics ? .on : .off
-        
-        if !prefs.showMenuBarLyrics {
-            updateLyricsTitle(text: nil)
-        }
+    @objc private func toggleMenuBarLyrics(_: NSMenuItem) {
+        onToggleMenuBarLyrics?()
     }
     
-    @objc private func toggleFloatingWindow(_ sender: NSMenuItem) {
-        prefs.showFloatingWindow.toggle()
-        sender.state = prefs.showFloatingWindow ? .on : .off
-        
-        // 联动更新锁定按钮的可点击状态
-        statusItem?.menu?.item(withTag: 101)?.isEnabled = prefs.showFloatingWindow
-        
-        if prefs.showFloatingWindow {
-            LyricsWindowManager.shared.show()
-        } else {
-            LyricsWindowManager.shared.hide()
-        }
+    @objc private func toggleFloatingWindow(_: NSMenuItem) {
+        onToggleFloatingWindow?()
     }
     
-    @objc private func toggleLock(_ sender: NSMenuItem) {
-        prefs.isWindowLocked.toggle()
-        sender.state = prefs.isWindowLocked ? .on : .off
-        
-        // 通知窗口物理引擎更新穿透状态
-        LyricsWindowManager.shared.updateLockState()
+    @objc private func toggleLock(_: NSMenuItem) {
+        onToggleLock?()
     }
     
     @objc private func quitApp() {
-        NSApplication.shared.terminate(nil)
+        onQuit?() ?? NSApplication.shared.terminate(nil)
     }
     
     func unmount() {
         guard let item = statusItem else { return }
         NSStatusBar.system.removeStatusItem(item)
         statusItem = nil
+        menuBarLyricsItem = nil
+        floatingWindowItem = nil
+        lockItem = nil
+    }
+
+    func syncState(showMenuBarLyrics: Bool, showFloatingWindow: Bool, isWindowLocked: Bool) {
+        menuBarLyricsItem?.state = showMenuBarLyrics ? .on : .off
+        floatingWindowItem?.state = showFloatingWindow ? .on : .off
+        lockItem?.state = isWindowLocked ? .on : .off
+        lockItem?.isEnabled = showFloatingWindow
+        if !showMenuBarLyrics {
+            updateLyricsTitle(text: nil)
+        }
+    }
+
+    func setPlaybackInfo(text: String) {
+        updateMenuInfo(text: text)
+    }
+
+    func clearLyricsTitle() {
+        updateLyricsTitle(text: nil)
     }
 }

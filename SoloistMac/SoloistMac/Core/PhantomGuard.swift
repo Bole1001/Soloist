@@ -43,6 +43,7 @@ class PhantomGuard {
     
     private init() {
         setupBindings()
+        setupMenuBarBindings()
     }
     
     deinit {
@@ -109,12 +110,61 @@ class PhantomGuard {
             }
         }
     }
+
+    private func setupMenuBarBindings() {
+        menuBarManager.onToggleMenuBarLyrics = { [weak self] in
+            guard let self = self else { return }
+            self.showMenuBarLyrics.toggle()
+            self.menuBarManager.syncState(
+                showMenuBarLyrics: self.showMenuBarLyrics,
+                showFloatingWindow: self.showFloatingWindow,
+                isWindowLocked: Preferences.shared.isWindowLocked
+            )
+            if !self.showMenuBarLyrics {
+                self.menuBarManager.clearLyricsTitle()
+            }
+        }
+
+        menuBarManager.onToggleFloatingWindow = { [weak self] in
+            guard let self = self else { return }
+            self.showFloatingWindow.toggle()
+            self.menuBarManager.syncState(
+                showMenuBarLyrics: self.showMenuBarLyrics,
+                showFloatingWindow: self.showFloatingWindow,
+                isWindowLocked: Preferences.shared.isWindowLocked
+            )
+            if self.showFloatingWindow {
+                LyricsWindowManager.shared.show()
+            } else {
+                LyricsWindowManager.shared.hide()
+            }
+        }
+
+        menuBarManager.onToggleLock = {
+            Preferences.shared.isWindowLocked.toggle()
+            self.menuBarManager.syncState(
+                showMenuBarLyrics: self.showMenuBarLyrics,
+                showFloatingWindow: self.showFloatingWindow,
+                isWindowLocked: Preferences.shared.isWindowLocked
+            )
+            LyricsWindowManager.shared.updateLockState()
+        }
+
+        menuBarManager.onQuit = {
+            NSApplication.shared.terminate(nil)
+        }
+    }
     
     // MARK: - UI 自动唤醒逻辑
     
     /// 统一处理菜单栏和悬浮窗的显示，解决自动启动不出现的 Bug
     private func refreshUIComponents() {
         self.menuBarManager.showMusicUI(showFloatingWindow: self.showFloatingWindow)
+        self.menuBarManager.syncState(
+            showMenuBarLyrics: self.showMenuBarLyrics,
+            showFloatingWindow: self.showFloatingWindow,
+            isWindowLocked: Preferences.shared.isWindowLocked
+        )
     }
     
     // MARK: - 时间同步逻辑
@@ -202,6 +252,11 @@ class PhantomGuard {
     func handleReopen() {
         if !isAppleMusicRunning {
             menuBarManager.mount()
+            menuBarManager.syncState(
+                showMenuBarLyrics: self.showMenuBarLyrics,
+                showFloatingWindow: self.showFloatingWindow,
+                isWindowLocked: Preferences.shared.isWindowLocked
+            )
         }
     }
     

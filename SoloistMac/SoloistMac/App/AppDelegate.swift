@@ -8,7 +8,7 @@
 import Foundation
 import AppKit
 
-// AppDelegate 拦截器
+// AppDelegate 只接收系统级生命周期回调，并转交给 PhantomGuard 处理
 class AppDelegate: NSObject, NSApplicationDelegate {
     let phantomGuard = PhantomGuard.shared
 

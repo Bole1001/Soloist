@@ -16,6 +16,10 @@ class LyricsWindowManager: NSObject, NSWindowDelegate {
     // 鼠标监听器：Global 用于应用在后台，Local 用于应用在前台
     private var globalMouseMonitor: Any?
     private var localMouseMonitor: Any?
+
+    deinit {
+        cleanupMouseMonitors()
+    }
     
     @MainActor
     func show() {
@@ -103,15 +107,7 @@ class LyricsWindowManager: NSObject, NSWindowDelegate {
             // 解锁状态：接管鼠标并允许抓取透明背景
             panel.ignoresMouseEvents = false
             panel.isMovableByWindowBackground = true
-            
-            if let global = globalMouseMonitor {
-                NSEvent.removeMonitor(global)
-                globalMouseMonitor = nil
-            }
-            if let local = localMouseMonitor {
-                NSEvent.removeMonitor(local)
-                localMouseMonitor = nil
-            }
+            cleanupMouseMonitors()
             panel.animator().alphaValue = 1.0
         }
     }
@@ -138,5 +134,16 @@ class LyricsWindowManager: NSObject, NSWindowDelegate {
         guard let panel = window else { return }
         prefs.windowPositionX = panel.frame.origin.x
         prefs.windowPositionY = panel.frame.origin.y
+    }
+
+    private func cleanupMouseMonitors() {
+        if let global = globalMouseMonitor {
+            NSEvent.removeMonitor(global)
+            globalMouseMonitor = nil
+        }
+        if let local = localMouseMonitor {
+            NSEvent.removeMonitor(local)
+            localMouseMonitor = nil
+        }
     }
 }

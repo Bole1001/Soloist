@@ -14,7 +14,7 @@ struct SoloistMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
-        // 纯状态栏应用不需要主窗口，使用 Settings 占位防止默认弹窗
+        // 这里只负责声明一个无主窗口的场景，具体启动逻辑交给 AppDelegate
         Settings {
             EmptyView()
         }
